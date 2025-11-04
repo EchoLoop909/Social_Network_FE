@@ -7,9 +7,12 @@ import InboxPage from "./pages/InboxPage";
 import CreatePage from "./pages/CreatePage";
 import ProfilePage from "./pages/ProfilePage";
 import SavedPage from "./pages/SavedPage";
+import LoginPage from "./pages/Login";
 import { useEffect } from "react";
 import { useDispatch } from "react-redux";
 import { fetchMe } from "./store/authSlice";
+import RequireAuth from "./components/RequireAuth";
+import OAuthGate from "./components/OAuthGate";
 
 export default function App() {
   const dispatch = useDispatch();
@@ -18,19 +21,28 @@ export default function App() {
   }, [dispatch]);
 
   return (
-    <>
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/explore" element={<ExplorePage />} />
-          <Route path="/reels" element={<ReelsPage />} />
-          <Route path="/inbox" element={<InboxPage />} />
-          <Route path="/create" element={<CreatePage />} />
-          <Route path="/u/:username" element={<ProfilePage />} />
-          <Route path="/saved" element={<SavedPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+
+      <Route
+        path="/"
+        element={
+          <OAuthGate>
+            <RequireAuth>
+              <MainLayout />
+            </RequireAuth>
+          </OAuthGate>
+        }
+      >
+        <Route index element={<HomePage />} />
+        <Route path="explore" element={<ExplorePage />} />
+        <Route path="reels" element={<ReelsPage />} />
+        <Route path="inbox" element={<InboxPage />} />
+        <Route path="create" element={<CreatePage />} />
+        <Route path="u/:username" element={<ProfilePage />} />
+        <Route path="saved" element={<SavedPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
 }
