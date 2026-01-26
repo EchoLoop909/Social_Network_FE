@@ -7,33 +7,46 @@ import InboxPage from "./pages/InboxPage";
 import CreatePage from "./pages/CreatePage";
 import ProfilePage from "./pages/ProfilePage";
 import SavedPage from "./pages/SavedPage";
-import LoginPage from "./pages/Login";
-import { useEffect } from "react";
+
+import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
 import { fetchMe } from "./store/authSlice";
-import RequireAuth from "./components/RequireAuth";
-import OAuthGate from "./components/OAuthGate";
 
-export default function App() {
+// Không cần RequireAuth hay OAuthGate phức tạp nữa vì index.js đã chặn rồi
+// Nhưng vẫn có thể giữ lại RequireAuth để đảm bảo Redux có data
+
+export default function App({ keycloak }) {
   const dispatch = useDispatch();
+  const [isDataReady, setIsDataReady] = useState(false);
+
   useEffect(() => {
-    dispatch(fetchMe());
-  }, [dispatch]);
+    if (keycloak && keycloak.token) {
+      // Gọi API lấy thông tin user từ Backend của bạn
+      dispatch(fetchMe())
+        .finally(() => {
+           // Dù lấy được hay không cũng cho hiện App
+           // (Nếu API lỗi thì vào giao diện sẽ thấy lỗi sau)
+           setIsDataReady(true);
+        });
+    }
+  }, [dispatch, keycloak]);
+
+  // Hiện Loading trong lúc đang gọi API fetchMe
+  if (!isDataReady) {
+    return (
+       <div className="flex items-center justify-center h-screen">
+         <div className="text-xl">Đang tải dữ liệu người dùng...</div>
+       </div>
+    );
+  }
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-
-      <Route
-        path="/"
-        element={
-          <OAuthGate>
-            <RequireAuth>
-              <MainLayout />
-            </RequireAuth>
-          </OAuthGate>
-        }
-      >
+       {/* KHÔNG CẦN ROUTE /login ở đây.
+          Nếu user muốn logout, chỉ cần gọi keycloak.logout() 
+       */}
+       
+      <Route path="/" element={<MainLayout keycloak={keycloak} />}>
         <Route index element={<HomePage />} />
         <Route path="explore" element={<ExplorePage />} />
         <Route path="reels" element={<ReelsPage />} />
