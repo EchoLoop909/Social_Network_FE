@@ -5,8 +5,8 @@ import ExplorePage from "./pages/ExplorePage";
 import ReelsPage from "./pages/ReelsPage";
 import InboxPage from "./pages/InboxPage";
 import CreatePage from "./pages/CreatePage";
-import ProfilePage from "./pages/ProfilePage";
 import SavedPage from "./pages/SavedPage";
+import ProfilePage from "./components/ProfilePage";
 
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";

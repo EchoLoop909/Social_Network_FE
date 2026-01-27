@@ -4,7 +4,7 @@ import Keycloak from 'keycloak-js';
 const keycloakConfig = {
   url: 'http://localhost:8080', // Đường dẫn đến Keycloak Server của bạn
   realm: 'master',            // Tên Realm bạn đã tạo
-  clientId: 'Social_Network_FE'   // Client ID bạn vừa cấu hình ở Bước 1
+  clientId: 'SocialNetwork-FE'   // Client ID bạn vừa cấu hình ở Bước 1
 };
 
 const keycloak = new Keycloak(keycloakConfig);

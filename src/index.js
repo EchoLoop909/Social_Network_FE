@@ -11,7 +11,7 @@ import App from "./App";
 const keycloakConfig = {
   url: "http://localhost:8080", 
   realm: "master",            
-  clientId: "Social_Network_FE", 
+  clientId: "SocialNetwork-FE", 
 };
 
 const keycloak = new Keycloak(keycloakConfig);
