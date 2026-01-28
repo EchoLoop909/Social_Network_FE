@@ -1,6 +1,6 @@
 const KC_AUTH_URL =
   "http://10.2.22.23:8080/realms/master/protocol/openid-connect/auth";
-const CLIENT_ID = "SocialNetwork";
+const CLIENT_ID = "Social_Network_FE";
 const REDIRECT_URI = `${window.location.origin}/`;
 
 function genState() {

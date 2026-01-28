@@ -5,64 +5,55 @@ import { BrowserRouter } from "react-router-dom";
 import { Provider } from "react-redux";
 import { PersistGate } from "redux-persist/integration/react";
 import { store, persistor } from "./store";
-import Keycloak from "keycloak-js";
+
+// Import instance từ file chung
+import keycloak from "./keycloak"; 
 import App from "./App"; 
 
-const keycloakConfig = {
-  url: "http://localhost:8080", 
-  realm: "master",            
-  clientId: "SocialNetwork-FE", 
-};
-
-const keycloak = new Keycloak(keycloakConfig);
-
-window.__store__ = store;
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
-// --- MÀN HÌNH LOADING ĐƠN GIẢN KHI KHỞI TẠO ---
-// Render tạm một cái loading trắng trong lúc chờ Keycloak check
+// 1. Hiển thị màn hình chờ ban đầu
 root.render(
   <div style={{ display: 'flex', justifyContent: 'center', marginTop: 50 }}>
-    Đang kết nối tới máy chủ đăng nhập...
+    <h3>Đang kết nối tới máy chủ đăng nhập...</h3>
   </div>
 );
 
+// 2. Khởi tạo Keycloak
 keycloak
   .init({
-    onLoad: "login-required", // <--- DÒNG QUAN TRỌNG NHẤT: Bắt buộc dùng trang Login Keycloak
-    pkceMethod: "S256",
+    onLoad: "login-required", // Bắt buộc đăng nhập
     checkLoginIframe: false,
+    pkceMethod: "S256",
   })
   .then((authenticated) => {
-    if (!authenticated) {
-      // Thực tế dòng này ít khi chạy vì 'login-required' đã tự redirect rồi
-      console.log("User chưa đăng nhập, đang redirect...");
-    } else {
-      console.log("Đã đăng nhập thành công!");
+    if (authenticated) {
+      console.log("Keycloak Login OK!");
       
-      // Lưu token để tiện dùng (hoặc cấu hình axios interceptor sau này)
-      localStorage.setItem("token", keycloak.token);
-
-      // --- CHỈ RENDER APP KHI ĐÃ CÓ AUTHENTICATION ---
+      // Render App khi đã có Token
       root.render(
-        <React.StrictMode>
+        // <React.StrictMode> // Có thể tạm tắt StrictMode nếu thấy log bị lặp 2 lần
           <Provider store={store}>
             <PersistGate loading={null} persistor={persistor}>
               <BrowserRouter>
-                {/* Truyền keycloak xuống để App dùng gọi API hoặc Logout */}
+                {/* Truyền keycloak đã login thành công vào App */}
                 <App keycloak={keycloak} />
               </BrowserRouter>
             </PersistGate>
           </Provider>
-        </React.StrictMode>
+        // </React.StrictMode>
       );
+    } else {
+      // Trường hợp hiếm: login-required thất bại thì reload
+      window.location.reload();
     }
   })
   .catch((error) => {
     console.error("Lỗi Keycloak:", error);
     root.render(
-       <div style={{ color: 'red', padding: 20 }}>
-         Lỗi kết nối Keycloak server. Hãy kiểm tra lại backend.
+       <div style={{ color: 'red', padding: 20, textAlign: 'center' }}>
+         <h3>Lỗi kết nối tới Keycloak Server (localhost:8080).</h3>
+         <p>Vui lòng kiểm tra: Keycloak đã bật chưa? Đã cấu hình Web Origins chưa?</p>
        </div>
     );
   });
