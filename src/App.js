@@ -60,8 +60,7 @@ export default function App({ keycloak }) {
         name: keycloak.tokenParsed?.given_name || "",
         lastname: keycloak.tokenParsed?.family_name || "",
         surname: keycloak.tokenParsed?.family_name || "",
-        description: "New user from Keycloak",
-        photo: "asdasd.jpg", 
+        description: "",
         status: "1a2b3c4d-0001-0000-0000-000000000001"
       };
 
