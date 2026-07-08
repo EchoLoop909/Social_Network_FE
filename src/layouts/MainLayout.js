@@ -181,7 +181,9 @@ import CreatePostDialog from "../features/create/CreatePostDialog";
 import Drawer from "../components/Drawer";
 import SearchPanel from "../features/search/SearchPanel";
 import NotificationPanel from "../features/notifications/NotificationPanel";
-import LogoutButton from "../components/LogoutButton"; 
+import LogoutButton from "../components/LogoutButton";
+import { BE_URL } from "../config";
+import { getStoredTokens } from "../services/authApi";
 
 function SideItem({ to, onClick, icon: Icon, label, end, badge, collapsed, customIcon }) {
   const base = "flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-800 dark:text-neutral-200 transition-all duration-200";
@@ -229,14 +231,14 @@ export default function MainLayout({ keycloak }) {
   // Lấy thông tin cá nhân để hiện ảnh lên Sidebar
   useEffect(() => {
     const fetchMyInfo = async () => {
-      const token = localStorage.getItem("token");
+      const token = getStoredTokens()?.access_token;
       if (!token) return;
       try {
         const payload = JSON.parse(window.atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-        const res = await axios.get("http://localhost:1234/auth/getuser?pageIdx=1&pageSize=100", {
+        const res = await axios.get(`${BE_URL}/auth/getuser?pageIdx=1&pageSize=100`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        const found = res.data.Object.find(u => u.keycloakId === payload.sub);
+        const found = res.data.Object.find(u => u.id === payload.sub);
         if (found) setMyInfo(found);
       } catch (e) { console.error("Sidebar fetch error:", e); }
     };
@@ -278,7 +280,7 @@ export default function MainLayout({ keycloak }) {
 
         <div className="mt-auto flex flex-col gap-1">
           <ThemeSwitch onToggle={() => dispatch(toggleTheme())} />
-          <div className={collapsed ? "hidden" : "block px-2"}><LogoutButton keycloak={keycloak} /></div>
+          <div className={collapsed ? "hidden" : "block px-2"}><LogoutButton /></div>
           <div className={`flex items-center gap-3 px-3 py-3 mt-1 rounded-lg hover:bg-gray-100 cursor-pointer ${collapsed ? "justify-center" : ""}`}>
             <ChevronDown size={24} /><span className={collapsed ? "hidden" : "hidden xl:inline"}>Xem thêm</span>
           </div>

@@ -1,74 +1,59 @@
-import { mockApiCall } from "./apiMock";
-import { posts, currentUser, users } from "./data/seed";
+import { api } from "./api";
 
-/**
- * Lấy danh sách bài đăng.
- */
-export function getFeed({ cursor = 0, limit = 5 } = {}) {
-  return mockApiCall(() => {
-    const startIndex = cursor;
-    const endIndex = Math.min(startIndex + limit, posts.length);
-    const hasMore = endIndex < posts.length;
+// --- HÀM CHUẨN HÓA DỮ LIỆU ---
+function normalizePost(raw) {
+  if (!raw) return null;
+  const user = raw.user || {};
 
-    return {
-      posts: posts.slice(startIndex, endIndex),
-      nextCursor: hasMore ? endIndex : null,
-      currentUser,
-      users,
-    };
-  });
+  return {
+    id: raw.id,
+    authorId: user.id || "unknown",
+
+    // Map thông tin User
+    author: {
+      id: user.id || "unknown",
+      username: user.username || "Người dùng",
+      name: (user.lastname || "") + " " + (user.firstname || ""),
+      avatar: user.photo || `https://ui-avatars.com/api/?name=${user.username || "User"}`,
+    },
+
+    // Map nội dung bài viết
+    caption: raw.text || "",
+    images: raw.photo ? [raw.photo] : [],
+    ts: raw.createTime ? new Date(raw.createTime).getTime() : Date.now(),
+
+    // Các trường fake để UI không lỗi
+    likes: 0,
+    likedByMe: false,
+    savedByMe: false,
+    comments: [],
+  };
 }
 
-export function likePost(postId) {
-  return mockApiCall(() => {
-    const post = posts.find((p) => p.id === postId);
-    if (!post) throw new Error("Không tìm thấy bài đăng.");
+// --- HÀM GỌI API ---
+export async function getFeed({ cursor = 0, limit = 20 } = {}) {
+  // SỬA LỖI PHÂN TRANG:
+  // Nếu cursor <= 0 -> gửi 1. Backend sẽ trừ 1 thành 0.
+  const pageIdx = (!cursor || cursor <= 0) ? 1 : cursor;
 
-    post.likedByMe = !post.likedByMe;
-    post.likes += post.likedByMe ? 1 : -1;
+  try {
+    const data = await api.getPosts(pageIdx, limit);
 
-    return { postId, likes: post.likes, likedByMe: post.likedByMe };
-  });
-}
+    let list = [];
+    // Tìm mảng trong .Object
+    if (data && Array.isArray(data.Object)) {
+      list = data.Object;
+    }
 
-export function savePost(postId) {
-  return mockApiCall(() => {
-    const post = posts.find((p) => p.id === postId);
-    if (!post) throw new Error("Không tìm thấy bài đăng.");
-    post.savedByMe = !post.savedByMe;
-    return { postId, savedByMe: post.savedByMe };
-  });
-}
+    const normalizedPosts = list.map(normalizePost).filter(Boolean);
 
-export function addComment(postId, content) {
-  return mockApiCall(() => {
-    const post = posts.find((p) => p.id === postId);
-    if (!post) throw new Error("Không tìm thấy bài đăng.");
-    const c = {
-      id: "c_" + Math.random().toString(36).slice(2),
-      userId: "u_me",
-      content,
-      ts: Date.now(),
-    };
-    post.comments.push(c);
-    return { postId, comment: c };
-  });
-}
+    // Tính trang tiếp theo
+    const nextCursor = list.length > 0 ? pageIdx + 1 : null;
 
-export function createPost({ files, caption }) {
-  return mockApiCall(() => {
-    const p = {
-      id: "p" + (posts.length + 1),
-      authorId: "u_me",
-      images: files?.length ? files : [posts[0].images[0]],
-      likes: 0,
-      likedByMe: false,
-      savedByMe: false,
-      caption: caption || "",
-      ts: Date.now(),
-      comments: [],
-    };
-    posts.unshift(p);
-    return { post: p };
-  });
+    return { posts: normalizedPosts, nextCursor };
+
+  } catch (err) {
+    console.error("Lỗi:", err);
+    throw err;
+  }
 }

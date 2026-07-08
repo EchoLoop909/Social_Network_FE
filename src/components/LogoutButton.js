@@ -1,33 +1,28 @@
 import React from "react";
 import { useDispatch } from "react-redux";
-// Import action logout từ slice của m (nếu m đã tạo như hướng dẫn trước)
-// import { logout } from "../store/authSlice"; 
+import { useNavigate } from "react-router-dom";
+import { logout } from "../store/authSlice";
+import { getStoredTokens, clearTokens, logoutApi } from "../services/authApi";
 
-const LogoutButton = ({ keycloak }) => {
+const LogoutButton = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-  const handleLogout = () => {
-    // 1. Xóa token rác ở trình duyệt
-    localStorage.removeItem("token");
-
-    // 2. Xóa state user trong Redux (để giao diện cập nhật ngay lập tức)
-    // dispatch(logout()); // Bỏ comment dòng này nếu m đã thêm reducer logout bên authSlice
-    
-    // 3. Gọi Keycloak logout
-    // redirectUri: Sau khi logout xong, Keycloak sẽ đá về trang chủ (http://localhost:3000)
-    if (keycloak) {
-      keycloak.logout({
-        redirectUri: window.location.origin 
-      });
-    } else {
-        console.error("Keycloak instance bị null!");
+  const handleLogout = async () => {
+    const tokens = getStoredTokens();
+    // Thu hồi phiên tại Keycloak (không chặn nếu lỗi)
+    if (tokens?.refresh_token) {
+      await logoutApi(tokens.refresh_token);
     }
+    clearTokens();
+    dispatch(logout());
+    navigate("/login", { replace: true });
   };
 
   return (
-    <button 
+    <button
       onClick={handleLogout}
-      className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+      className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded w-full"
     >
       Đăng xuất
     </button>
