@@ -39,7 +39,7 @@ const ProfilePage = () => {
       // 1. Upload Cloudinary
       const formData = new FormData();
       formData.append("file", file);
-      const uploadRes = await axios.post("http://localhost:1234/images/upload", formData, {
+      const uploadRes = await axios.post("http://localhost:1234/post/upload", formData, {
         headers: { "Content-Type": "multipart/form-data", "Authorization": `Bearer ${token}` }
       });
       const newUrl = uploadRes.data;

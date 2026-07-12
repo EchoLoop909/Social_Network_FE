@@ -54,7 +54,7 @@ instance.interceptors.response.use(
 export const api = {
   // API lấy bài viết
   getPosts: (pageIdx = 1, pageSize = 100) =>
-    instance.get("/images/post", {
+    instance.get("/post/post", {
       params: { pageIdx, pageSize },
     }),
 
