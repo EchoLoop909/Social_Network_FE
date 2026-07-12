@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2 } from "lucide-react";
+import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2, UserPlus } from "lucide-react";
 import MediaCarousel from "./MediaCarousel";
 import ReactionButton from "./ReactionButton";
 import PostModal from "./PostModal";
@@ -10,6 +10,7 @@ import SharePostDialog from "./SharePostDialog";
 import SharedOriginalCard from "./SharedOriginalCard";
 import { setMyReaction, setCommentCount, toggleSaveLocal, deletePostThunk } from "../../store/feedSlice";
 import * as likeApi from "../../services/likeApi";
+import { sendFriendRequest } from "../../services/followershipApi";
 import { getRootComments } from "../../services/commentApi";
 import { formatNumber } from "../../utils/formatNumber";
 import { timeAgo } from "../../utils/timeAgo";
@@ -25,6 +26,7 @@ export default function PostCard({ post }) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openShare, setOpenShare] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [friendState, setFriendState] = useState("idle"); // idle | sending | done
 
   // Bài share đã mất gốc thì BE chặn share tiếp -> ẩn/khoá nút share ở FE cho khớp
   const shareDisabled = post.isShared && post.originalLost;
@@ -55,6 +57,26 @@ export default function PostCard({ post }) {
     };
   }, [post.id, currentUserId]); // eslint-disable-line
 
+  // Gửi lời mời kết bạn tới tác giả bài viết (post.authorId là id thật từ BE).
+  // Lưu ý: chưa có API lấy trạng thái quan hệ hiện tại, nên nút luôn khởi tạo ở "idle";
+  // nếu BE báo "đã gửi trước đó" / "đã là bạn bè" thì coi như đã xong (done).
+  const handleAddFriend = async () => {
+    if (friendState !== "idle") return;
+    setFriendState("sending");
+    try {
+      await sendFriendRequest(post.authorId);
+      setFriendState("done");
+    } catch (e) {
+      const msg = e?.response?.data?.Errors?.message || "Gửi lời mời thất bại";
+      if (/đã gửi|đã là bạn/i.test(msg)) {
+        setFriendState("done");
+      } else {
+        setFriendState("idle");
+      }
+      alert(msg);
+    }
+  };
+
   const handleDelete = async () => {
     setMenuOpen(false);
     if (!window.confirm("Xoá bài viết này?")) return;
@@ -84,6 +106,21 @@ export default function PostCard({ post }) {
           {post.isPinned && <Pin size={13} className="inline ml-2 text-gray-400" />}
           <span className="text-gray-400 text-xs ml-2">• {timeAgo(post.ts)}</span>
         </div>
+
+        {!isOwner && currentUserId && (
+          <button
+            onClick={handleAddFriend}
+            disabled={friendState !== "idle"}
+            className="flex items-center gap-1 text-xs font-semibold text-insta-primary disabled:text-gray-400 mr-1"
+          >
+            <UserPlus size={16} />
+            {friendState === "sending"
+              ? "Đang gửi..."
+              : friendState === "done"
+              ? "Đã gửi lời mời"
+              : "Kết bạn"}
+          </button>
+        )}
 
         {isOwner && (
           <div className="relative">
