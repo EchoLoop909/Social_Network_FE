@@ -57,7 +57,7 @@ export { instance };
 export const api = {
   // API lấy bài viết
   getPosts: (pageIdx = 1, pageSize = 100) =>
-    instance.get("/post/post", {
+    instance.get("/post/GetlistPost", {
       params: { pageIdx, pageSize },
     }),
 
