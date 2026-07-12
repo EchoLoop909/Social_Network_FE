@@ -1,36 +1,61 @@
-import React, { useState } from "react";
-import { useDispatch } from "react-redux";
-import {
-  Heart,
-  MessageCircle,
-  Send,
-  Bookmark,
-  MoreHorizontal,
-} from "lucide-react";
-import { toggleLike } from "../../store/feedSlice";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin } from "lucide-react";
+import MediaCarousel from "./MediaCarousel";
+import ReactionButton from "./ReactionButton";
+import PostModal from "./PostModal";
+import EditPostDialog from "./EditPostDialog";
+import { setMyReaction, setCommentCount, toggleSaveLocal, deletePostThunk } from "../../store/feedSlice";
+import * as likeApi from "../../services/likeApi";
+import { getRootComments } from "../../services/commentApi";
+import { formatNumber } from "../../utils/formatNumber";
+import { timeAgo } from "../../utils/timeAgo";
 
 export default function PostCard({ post }) {
   const dispatch = useDispatch();
+  const currentUser = useSelector((s) => s.auth.user);
+  const currentUserId = currentUser?.id;
+  const isOwner = currentUserId && post.authorId === currentUserId;
 
-  const author = post._author || post.author || {
-    id: "unknown",
-    username: "Người dùng",
-    avatar: "https://via.placeholder.com/40",
+  const [openModal, setOpenModal] = useState(false);
+  const [openEdit, setOpenEdit] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const hydrated = useRef(false);
+
+  const author = post.author || { username: "Người dùng", avatar: "" };
+  const avatar = author.avatar || `https://ui-avatars.com/api/?name=${author.username}`;
+
+  // Nạp cảm xúc hiện tại + số bình luận thật khi card xuất hiện
+  useEffect(() => {
+    if (hydrated.current) return;
+    hydrated.current = true;
+    let alive = true;
+    (async () => {
+      try {
+        if (currentUserId) {
+          const r = await likeApi.getMyReaction("POST", post.id);
+          if (alive && r) dispatch(setMyReaction({ postId: post.id, reactionType: r }));
+        }
+        const { totalElements } = await getRootComments(post.id, 1, 1);
+        if (alive) dispatch(setCommentCount({ postId: post.id, count: totalElements }));
+      } catch (e) {
+        /* im lặng: chỉ là số liệu phụ trợ */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [post.id, currentUserId]); // eslint-disable-line
+
+  const handleDelete = async () => {
+    setMenuOpen(false);
+    if (!window.confirm("Xoá bài viết này?")) return;
+    try {
+      await dispatch(deletePostThunk(post.id)).unwrap();
+    } catch (e) {
+      alert("Xoá bài thất bại: " + e);
+    }
   };
-
-  const [isLiked, setIsLiked] = useState(post.likedByMe);
-  const [likeCount, setLikeCount] = useState(post.likes || 0);
-  const [saved, setSaved] = useState(post.savedByMe);
-
-  const handleLike = () => {
-    setIsLiked((v) => !v);
-    setLikeCount((prev) => (!isLiked ? prev + 1 : prev - 1));
-    dispatch(toggleLike(post.id));
-  };
-
-  const timeAgo = post.ts ? new Date(post.ts).toLocaleString("vi-VN") : "";
-  const avatar =
-    author.avatar || `https://ui-avatars.com/api/?name=${author.username}`;
 
   return (
     <article className="bg-white dark:bg-black border border-gray-200 dark:border-neutral-800 rounded-lg mb-6">
@@ -48,68 +73,80 @@ export default function PostCard({ post }) {
         </div>
         <div className="flex-1 min-w-0">
           <span className="font-semibold text-sm">{author.username}</span>
-          <span className="text-gray-400 text-xs ml-2">• {timeAgo}</span>
+          {post.isPinned && <Pin size={13} className="inline ml-2 text-gray-400" />}
+          <span className="text-gray-400 text-xs ml-2">• {timeAgo(post.ts)}</span>
         </div>
-        <button className="text-gray-600 dark:text-gray-300 hover:opacity-60">
-          <MoreHorizontal size={20} />
-        </button>
+
+        {isOwner && (
+          <div className="relative">
+            <button onClick={() => setMenuOpen((v) => !v)} className="text-gray-600 dark:text-gray-300 hover:opacity-60">
+              <MoreHorizontal size={20} />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-7 z-20 w-32 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 text-sm">
+                  <button
+                    onClick={() => { setMenuOpen(false); setOpenEdit(true); }}
+                    className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                  >
+                    Chỉnh sửa
+                  </button>
+                  <button onClick={handleDelete} className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-700">
+                    Xoá bài
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* ẢNH */}
-      {post.images && post.images.length > 0 && (
-        <div className="w-full bg-black flex items-center justify-center overflow-hidden aspect-square border-y border-gray-100 dark:border-neutral-800">
-          <img
-            src={post.images[0]}
-            alt="Nội dung bài viết"
-            className="w-full h-full object-cover"
-          />
+      {/* MEDIA */}
+      {post.media && post.media.length > 0 && (
+        <div className="aspect-square border-y border-gray-100 dark:border-neutral-800">
+          <MediaCarousel media={post.media} className="h-full" />
         </div>
       )}
 
       {/* ACTIONS */}
       <div className="px-3 pt-2">
-        <div className="flex justify-between mb-2">
-          <div className="flex gap-4">
-            <button onClick={handleLike} className="hover:opacity-60 transition">
-              <Heart
-                size={26}
-                className={isLiked ? "fill-red-500 text-red-500" : ""}
-              />
+        <div className="flex justify-between mb-2 items-center">
+          <div className="flex gap-4 items-center">
+            <ReactionButton post={post} showLabel={false} />
+            <button onClick={() => setOpenModal(true)} className="hover:opacity-60 transition">
+              <MessageCircle size={24} />
             </button>
             <button className="hover:opacity-60 transition">
-              <MessageCircle size={26} />
-            </button>
-            <button className="hover:opacity-60 transition">
-              <Send size={26} />
+              <Send size={24} />
             </button>
           </div>
-          <button
-            onClick={() => setSaved((v) => !v)}
-            className="hover:opacity-60 transition"
-          >
-            <Bookmark size={26} className={saved ? "fill-current" : ""} />
+          <button onClick={() => dispatch(toggleSaveLocal(post.id))} className="hover:opacity-60 transition">
+            <Bookmark size={24} className={post.savedByMe ? "fill-current" : ""} />
           </button>
         </div>
 
-        <div className="font-semibold text-sm mb-1">{likeCount} lượt thích</div>
+        <div className="font-semibold text-sm mb-1">{formatNumber(post.likes || 0)} lượt thích</div>
 
-        <div className="text-sm">
-          <span className="font-semibold mr-2">{author.username}</span>
-          <span>{post.caption}</span>
-        </div>
-
-        {post.comments && post.comments.length > 0 ? (
-          <div className="text-gray-500 text-sm mt-1 cursor-pointer">
-            Xem tất cả {post.comments.length} bình luận
+        {post.caption && (
+          <div className="text-sm">
+            <span className="font-semibold mr-2">{author.username}</span>
+            <span className="whitespace-pre-wrap break-words">{post.caption}</span>
           </div>
-        ) : (
-          <div className="text-gray-400 text-xs mt-1">Chưa có bình luận nào</div>
         )}
 
-        <div className="text-gray-400 text-[11px] uppercase mt-2 pb-3">
-          {timeAgo}
-        </div>
+        <button
+          onClick={() => setOpenModal(true)}
+          className="block text-gray-500 text-sm mt-1"
+        >
+          {post.commentCount > 0 ? `Xem tất cả ${formatNumber(post.commentCount)} bình luận` : "Viết bình luận..."}
+        </button>
+
+        <div className="text-gray-400 text-[11px] uppercase mt-2 pb-3">{timeAgo(post.ts)}</div>
       </div>
+
+      <PostModal post={post} open={openModal} onClose={() => setOpenModal(false)} currentUserId={currentUserId} />
+      {openEdit && <EditPostDialog open={openEdit} onClose={() => setOpenEdit(false)} post={post} />}
     </article>
   );
 }

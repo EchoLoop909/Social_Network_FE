@@ -51,6 +51,9 @@ instance.interceptors.response.use(
   }
 );
 
+// Export instance để các service khác (postApi, likeApi, commentApi) tái dùng interceptor Bearer
+export { instance };
+
 export const api = {
   // API lấy bài viết
   getPosts: (pageIdx = 1, pageSize = 100) =>

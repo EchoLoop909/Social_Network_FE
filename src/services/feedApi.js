@@ -5,6 +5,16 @@ function normalizePost(raw) {
   if (!raw) return null;
   const user = raw.user || {};
 
+  // Media BE trả trong mediaList (đã sort theo displayOrder). Chuẩn hoá về { url, type }.
+  const media = Array.isArray(raw.mediaList)
+    ? raw.mediaList.map((m) => ({
+        url: m.mediaUrl,
+        type: (m.mediaType || "IMAGE").toUpperCase(), // IMAGE | VIDEO
+        width: m.width,
+        height: m.height,
+      }))
+    : [];
+
   return {
     id: raw.id,
     authorId: user.id || "unknown",
@@ -19,12 +29,21 @@ function normalizePost(raw) {
 
     // Map nội dung bài viết
     caption: raw.text || "",
-    images: raw.photo ? [raw.photo] : [],
+    media, // list đầy đủ (ảnh/video) để render carousel
+    images: media.map((m) => m.url), // tiện cho code cũ chỉ cần URL
     ts: raw.createTime ? new Date(raw.createTime).getTime() : Date.now(),
 
-    // Các trường fake để UI không lỗi
-    likes: 0,
-    likedByMe: false,
+    // Metadata phục vụ sửa/ghim bài
+    postType: raw.postType,
+    visibility: raw.visibility,
+    isPinned: !!raw.isPinned,
+
+    // Số liệu thật từ BE (denormalized counter)
+    likes: raw.reactionCount || 0,
+    commentCount: raw.commentCount || 0,
+
+    // myReaction cập nhật sau khi gọi /like/my-reaction (null = chưa thả)
+    myReaction: null,
     savedByMe: false,
     comments: [],
   };
