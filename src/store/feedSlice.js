@@ -88,6 +88,21 @@ export const deletePostThunk = createAsyncThunk(
   }
 );
 
+// Share (repost nội bộ) 1 bài viết. share không trả về bài mới -> nạp lại feed từ đầu
+// (giống createPostThunk) để bài share mới + share_count cập nhật xuất hiện.
+export const sharePostThunk = createAsyncThunk(
+  "feed/sharePost",
+  async ({ originalPostId, text }, { dispatch, rejectWithValue }) => {
+    try {
+      await postApi.sharePost({ originalPostId, text });
+      dispatch(fetchFeed(0));
+      return true;
+    } catch (err) {
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
 // --- 4. SLICE ---
 const feedSlice = createSlice({
   name: "feed",

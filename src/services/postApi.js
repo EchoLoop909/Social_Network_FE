@@ -33,3 +33,11 @@ export async function updatePost({ id, text, photo, isPinned, visibility }) {
 export async function deletePost(id) {
   return instance.post("/post/delete", { id });
 }
+
+/**
+ * Share (repost nội bộ) 1 bài viết. originalPostId = id bài đang bấm share;
+ * text = caption riêng của người share (optional). userId KHÔNG gửi — BE lấy từ token.
+ */
+export async function sharePost({ originalPostId, text }) {
+  return instance.post("/post/share", { originalPostId, text });
+}

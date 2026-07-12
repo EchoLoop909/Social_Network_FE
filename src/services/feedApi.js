@@ -1,5 +1,30 @@
 import { api } from "./api";
 
+// Chuẩn hoá bài GỐC lồng trong 1 lượt share về shape gọn để render "card bên trong".
+// Chỉ lấy 1 tầng (không đệ quy tiếp originalPost) — FE giới hạn độ sâu hiển thị.
+function normalizeOriginal(raw) {
+  if (!raw) return null;
+  const user = raw.user || {};
+  const media = Array.isArray(raw.mediaList)
+    ? raw.mediaList.map((m) => ({
+        url: m.mediaUrl,
+        type: (m.mediaType || "IMAGE").toUpperCase(),
+        width: m.width,
+        height: m.height,
+      }))
+    : [];
+  return {
+    id: raw.id,
+    author: {
+      id: user.id || "unknown",
+      username: user.username || "Người dùng",
+      avatar: user.photo || `https://ui-avatars.com/api/?name=${user.username || "User"}`,
+    },
+    caption: raw.text || "",
+    media,
+  };
+}
+
 // --- HÀM CHUẨN HÓA DỮ LIỆU ---
 function normalizePost(raw) {
   if (!raw) return null;
@@ -41,6 +66,14 @@ function normalizePost(raw) {
     // Số liệu thật từ BE (denormalized counter)
     likes: raw.reactionCount || 0,
     commentCount: raw.commentCount || 0,
+    shareCount: raw.shareCount || 0,
+
+    // Thông tin share (repost nội bộ)
+    isShared: !!raw.isShared,
+    // Bài gốc lồng bên trong (null nếu là bài thường HOẶC gốc đã bị xoá)
+    original: raw.originalPost ? normalizeOriginal(raw.originalPost) : null,
+    // true khi đây là 1 lượt share nhưng bài gốc đã bị xoá -> hiển thị "gốc không còn tồn tại"
+    originalLost: !!raw.isShared && !raw.originalPost,
 
     // myReaction cập nhật sau khi gọi /like/my-reaction (null = chưa thả)
     myReaction: null,

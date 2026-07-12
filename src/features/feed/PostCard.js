@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin } from "lucide-react";
+import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2 } from "lucide-react";
 import MediaCarousel from "./MediaCarousel";
 import ReactionButton from "./ReactionButton";
 import PostModal from "./PostModal";
 import EditPostDialog from "./EditPostDialog";
+import SharePostDialog from "./SharePostDialog";
+import SharedOriginalCard from "./SharedOriginalCard";
 import { setMyReaction, setCommentCount, toggleSaveLocal, deletePostThunk } from "../../store/feedSlice";
 import * as likeApi from "../../services/likeApi";
 import { getRootComments } from "../../services/commentApi";
@@ -19,7 +21,11 @@ export default function PostCard({ post }) {
 
   const [openModal, setOpenModal] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
+  const [openShare, setOpenShare] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Bài share đã mất gốc thì BE chặn share tiếp -> ẩn/khoá nút share ở FE cho khớp
+  const shareDisabled = post.isShared && post.originalLost;
   const hydrated = useRef(false);
 
   const author = post.author || { username: "Người dùng", avatar: "" };
@@ -109,6 +115,13 @@ export default function PostCard({ post }) {
         </div>
       )}
 
+      {/* CARD BÀI GỐC LỒNG BÊN TRONG (chỉ với bài share) */}
+      {post.isShared && (
+        <div className="pt-2">
+          <SharedOriginalCard original={post.original} lost={post.originalLost} />
+        </div>
+      )}
+
       {/* ACTIONS */}
       <div className="px-3 pt-2">
         <div className="flex justify-between mb-2 items-center">
@@ -116,6 +129,14 @@ export default function PostCard({ post }) {
             <ReactionButton post={post} showLabel={false} />
             <button onClick={() => setOpenModal(true)} className="hover:opacity-60 transition">
               <MessageCircle size={24} />
+            </button>
+            <button
+              onClick={() => setOpenShare(true)}
+              disabled={shareDisabled}
+              title={shareDisabled ? "Bài viết đã mất bài gốc, không thể chia sẻ" : "Chia sẻ"}
+              className="hover:opacity-60 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Repeat2 size={24} />
             </button>
             <button className="hover:opacity-60 transition">
               <Send size={24} />
@@ -126,7 +147,15 @@ export default function PostCard({ post }) {
           </button>
         </div>
 
-        <div className="font-semibold text-sm mb-1">{formatNumber(post.likes || 0)} lượt thích</div>
+        <div className="font-semibold text-sm mb-1">
+          {formatNumber(post.likes || 0)} lượt thích
+          {post.shareCount > 0 && (
+            <span className="font-normal text-gray-500">
+              {" "}
+              • {formatNumber(post.shareCount)} lượt chia sẻ
+            </span>
+          )}
+        </div>
 
         {post.caption && (
           <div className="text-sm">
@@ -147,6 +176,7 @@ export default function PostCard({ post }) {
 
       <PostModal post={post} open={openModal} onClose={() => setOpenModal(false)} currentUserId={currentUserId} />
       {openEdit && <EditPostDialog open={openEdit} onClose={() => setOpenEdit(false)} post={post} />}
+      {openShare && <SharePostDialog open={openShare} onClose={() => setOpenShare(false)} post={post} />}
     </article>
   );
 }
