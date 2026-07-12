@@ -24,9 +24,9 @@ export async function createPost({ text, visibility = "PUBLIC", media = [] }) {
   return instance.post("/post/insert", { text, visibility, media });
 }
 
-/** Sửa bài viết: { id, text, photo, isPinned }. */
-export async function updatePost({ id, text, photo, isPinned }) {
-  return instance.post("/post/update", { id, text, photo, isPinned });
+/** Sửa bài viết: { id, text, photo, isPinned, visibility }. visibility rỗng = giữ nguyên. */
+export async function updatePost({ id, text, photo, isPinned, visibility }) {
+  return instance.post("/post/update", { id, text, photo, isPinned, visibility });
 }
 
 /** Xoá bài viết theo id. */

@@ -8,12 +8,13 @@ export default function EditPostDialog({ open, onClose, post }) {
   const dispatch = useDispatch();
   const [text, setText] = useState(post?.caption || "");
   const [isPinned, setIsPinned] = useState(!!post?.isPinned);
+  const [visibility, setVisibility] = useState(post?.visibility || "PUBLIC");
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
-      await dispatch(updatePostThunk({ id: post.id, text, isPinned })).unwrap();
+      await dispatch(updatePostThunk({ id: post.id, text, isPinned, visibility })).unwrap();
       onClose();
     } catch (e) {
       alert("Sửa bài thất bại: " + e);
@@ -32,6 +33,19 @@ export default function EditPostDialog({ open, onClose, post }) {
         placeholder="Nội dung bài viết..."
         className="w-full resize-none border border-gray-300 dark:border-neutral-700 rounded-lg p-3 bg-transparent outline-none text-sm"
       />
+      <div className="mt-3">
+        <label className="block text-sm mb-1">Quyền xem</label>
+        <select
+          value={visibility}
+          onChange={(e) => setVisibility(e.target.value)}
+          className="w-full border border-gray-300 dark:border-neutral-700 rounded-lg p-2 bg-transparent text-sm"
+        >
+          <option value="PUBLIC">Công khai</option>
+          <option value="FOLLOWERS">Người theo dõi</option>
+          <option value="PRIVATE">Chỉ mình tôi</option>
+        </select>
+      </div>
+
       <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
         <input type="checkbox" checked={isPinned} onChange={(e) => setIsPinned(e.target.checked)} />
         Ghim bài viết

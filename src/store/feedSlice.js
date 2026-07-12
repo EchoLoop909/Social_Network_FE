@@ -158,11 +158,12 @@ const feedSlice = createSlice({
       })
       // Sửa bài -> patch text/isPinned tại chỗ
       .addCase(updatePostThunk.fulfilled, (state, action) => {
-        const { id, text, isPinned } = action.payload;
+        const { id, text, isPinned, visibility } = action.payload;
         const post = state.items.find((p) => p.id === id);
         if (!post) return;
         if (text !== undefined) post.caption = text;
         if (isPinned !== undefined) post.isPinned = !!isPinned;
+        if (visibility) post.visibility = visibility;
       })
       // Xoá bài -> gỡ khỏi danh sách
       .addCase(deletePostThunk.fulfilled, (state, action) => {
