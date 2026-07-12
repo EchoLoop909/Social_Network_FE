@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, instance } from "./api";
 
 // Chuẩn hoá bài GỐC lồng trong 1 lượt share về shape gọn để render "card bên trong".
 // Chỉ lấy 1 tầng (không đệ quy tiếp originalPost) — FE giới hạn độ sâu hiển thị.
@@ -108,4 +108,17 @@ export async function getFeed({ cursor = 0, limit = 20 } = {}) {
     console.error("Lỗi:", err);
     throw err;
   }
+}
+
+/**
+ * Lấy 1 bài viết theo id (dùng cho trang chi tiết /post/:id).
+ * BE hỗ trợ lọc theo id qua GET /post/GetlistPost?id=... -> trả mảng trong .Object.
+ * Trả về post đã chuẩn hoá, hoặc null nếu không tìm thấy.
+ */
+export async function getPostById(id) {
+  const data = await instance.get("/post/GetlistPost", {
+    params: { id, pageIdx: 1, pageSize: 1 },
+  });
+  const list = data && Array.isArray(data.Object) ? data.Object : [];
+  return list.length ? normalizePost(list[0]) : null;
 }

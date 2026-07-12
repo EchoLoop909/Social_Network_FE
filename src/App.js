@@ -10,6 +10,7 @@ import ReelsPage from "./pages/ReelsPage";
 import InboxPage from "./pages/InboxPage";
 import CreatePage from "./pages/CreatePage";
 import SavedPage from "./pages/SavedPage";
+import PostDetailPage from "./pages/PostDetailPage";
 import ProfilePage from "./components/ProfilePage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="inbox" element={<InboxPage />} />
         <Route path="create" element={<CreatePage />} />
         <Route path="u/:username" element={<ProfilePage />} />
+        <Route path="post/:id" element={<PostDetailPage />} />
         <Route path="saved" element={<SavedPage />} />
       </Route>
 

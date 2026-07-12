@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2 } from "lucide-react";
 import MediaCarousel from "./MediaCarousel";
@@ -15,6 +16,7 @@ import { timeAgo } from "../../utils/timeAgo";
 
 export default function PostCard({ post }) {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const currentUser = useSelector((s) => s.auth.user);
   const currentUserId = currentUser?.id;
   const isOwner = currentUserId && post.authorId === currentUserId;
@@ -115,10 +117,14 @@ export default function PostCard({ post }) {
         </div>
       )}
 
-      {/* CARD BÀI GỐC LỒNG BÊN TRONG (chỉ với bài share) */}
+      {/* CARD BÀI GỐC LỒNG BÊN TRONG (chỉ với bài share) — bấm để mở bài gốc */}
       {post.isShared && (
         <div className="pt-2">
-          <SharedOriginalCard original={post.original} lost={post.originalLost} />
+          <SharedOriginalCard
+            original={post.original}
+            lost={post.originalLost}
+            onOpen={post.original ? () => navigate(`/post/${post.original.id}`) : undefined}
+          />
         </div>
       )}
 
