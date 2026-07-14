@@ -12,6 +12,8 @@ import CreatePage from "./pages/CreatePage";
 import SavedPage from "./pages/SavedPage";
 import PostDetailPage from "./pages/PostDetailPage";
 import ProfilePage from "./components/ProfilePage";
+import FriendRequestDemo from "./pages/FriendRequestDemo";
+import FriendsPage from "./pages/FriendsPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 
@@ -55,6 +57,8 @@ export default function App() {
         <Route path="inbox" element={<InboxPage />} />
         <Route path="create" element={<CreatePage />} />
         <Route path="u/:username" element={<ProfilePage />} />
+        <Route path="friend" element={<FriendRequestDemo />} />
+        <Route path="friends" element={<FriendsPage />} />
         <Route path="post/:id" element={<PostDetailPage />} />
         <Route path="saved" element={<SavedPage />} />
       </Route>

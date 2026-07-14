@@ -167,7 +167,7 @@
 
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
-  Home, Search, Compass, Clapperboard, Send, Heart, PlusSquare, User, ChevronDown,
+  Home, Search, Compass, Clapperboard, Send, Heart, PlusSquare, User, ChevronDown, Users,
 } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import { toggleTheme } from "../store/uiSlice";
@@ -181,7 +181,6 @@ import CreatePostDialog from "../features/create/CreatePostDialog";
 import Drawer from "../components/Drawer";
 import SearchPanel from "../features/search/SearchPanel";
 import NotificationPanel from "../features/notifications/NotificationPanel";
-import LogoutButton from "../components/LogoutButton";
 import { BE_URL } from "../config";
 import { getStoredTokens } from "../services/authApi";
 
@@ -263,6 +262,7 @@ export default function MainLayout({ keycloak }) {
         <SideItem to="/explore" icon={Compass} label="Khám phá" collapsed={collapsed} />
         <SideItem to="/reels" icon={Clapperboard} label="Reels" collapsed={collapsed} />
         <SideItem to="/inbox" icon={Send} label="Tin nhắn" badge={unreadDM > 0} collapsed={collapsed} />
+        <SideItem to="/friends" icon={Users} label="Bạn bè" collapsed={collapsed} />
         <SideItem onClick={() => { setOpenNotif(!openNotif); setOpenSearch(false); }} icon={Heart} label="Thông báo" badge={unreadNotif > 0} collapsed={collapsed} />
         <SideItem onClick={() => setOpenCreate(true)} icon={PlusSquare} label="Tạo" collapsed={collapsed} />
         
@@ -280,7 +280,6 @@ export default function MainLayout({ keycloak }) {
 
         <div className="mt-auto flex flex-col gap-1">
           <ThemeSwitch onToggle={() => dispatch(toggleTheme())} />
-          <div className={collapsed ? "hidden" : "block px-2"}><LogoutButton /></div>
           <div className={`flex items-center gap-3 px-3 py-3 mt-1 rounded-lg hover:bg-gray-100 cursor-pointer ${collapsed ? "justify-center" : ""}`}>
             <ChevronDown size={24} /><span className={collapsed ? "hidden" : "hidden xl:inline"}>Xem thêm</span>
           </div>

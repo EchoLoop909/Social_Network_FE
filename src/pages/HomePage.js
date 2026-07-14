@@ -1,7 +1,6 @@
 import { useSelector, useDispatch } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import FeedList from "../features/feed/FeedList";
-import SuggestList from "../features/suggest/SuggestList";
 import { logout } from "../store/authSlice";
 import { getStoredTokens, clearTokens, logoutApi } from "../services/authApi";
 
@@ -71,16 +70,9 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Gợi ý theo dõi */}
-          <SuggestList />
-
           {/* Footer */}
           <footer className="text-[11px] text-gray-400 mt-8 space-y-3 leading-4">
-            <p>
-              Giới thiệu · Trợ giúp · Báo chí · API · Việc làm · Quyền riêng tư ·
-              Điều khoản · Vị trí · Ngôn ngữ
-            </p>
-            <p className="mt-4">© 2026 INSTAGRAM CLONE</p>
+           
           </footer>
         </div>
       </aside>

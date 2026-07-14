@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Đây là repo **frontend** của project SocialNetwork. Repo backend nằm ở thư mục ngang hàng `../Social_Network_BE`.
 
+## ⚠️ BẮT BUỘC: Xin phép trước khi sửa code
+
+**KHÔNG được tự ý tạo mới / sửa / xóa bất kỳ file code nào.** Trước mọi thay đổi code, PHẢI trình bày rõ kế hoạch (đụng file nào, sửa gì, vì sao) và **chờ người dùng đồng ý rõ ràng** rồi mới thực hiện — người dùng muốn review trước. Đọc/phân tích/giải thích code và chạy lệnh chỉ đọc thì không cần hỏi.
+
 ## Lệnh thường dùng
 
 - Cài đặt: `npm install`
