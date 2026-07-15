@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { Users, UserPlus, Cake, List, Home, Loader2, AlertCircle, Check, Ban } from "lucide-react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { Users, UserPlus, Cake, List, Home, Loader2, AlertCircle, Check, Ban, Search } from "lucide-react";
 import {
   getFriends,
   getFriendRequests,
@@ -11,6 +11,7 @@ import {
   unfriend,
   blockUser,
   unblockUser,
+  searchUsers,
 } from "../services/followershipApi";
 
 const PLACEHOLDER = "https://via.placeholder.com/180?text=?";
@@ -32,6 +33,47 @@ export default function FriendsPage() {
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   const [busyId, setBusyId] = useState(null);
+
+  // --- Tìm kiếm người dùng ---
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  // id của chính mình (lấy từ 'sub' trong access_token) để loại khỏi kết quả tìm kiếm
+  const meId = useMemo(() => {
+    try {
+      const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
+      if (!t?.access_token) return null;
+      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Tìm kiếm với debounce 400ms mỗi khi gõ (chỉ khi đang ở tab "search")
+  useEffect(() => {
+    if (tab !== "search") return;
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      setSearched(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const list = await searchUsers(q);
+        setResults(meId ? list.filter((u) => u.id !== meId) : list);
+        setSearched(true);
+      } catch (e) {
+        setErr(e?.message || "Tìm kiếm thất bại");
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [query, tab, meId]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -101,6 +143,13 @@ export default function FriendsPage() {
   // Gỡ gợi ý -> ẩn client
   const onDismiss = (u) => setHidden((prev) => new Set(prev).add(u.id));
 
+  // Gửi lời mời từ kết quả tìm kiếm -> send, bỏ khỏi kết quả
+  const onSendSearch = (u) =>
+    act(u.id, async () => {
+      await sendFriendRequest(u.id);
+      setResults((prev) => prev.filter((x) => x.id !== u.id));
+    }, `Đã gửi lời mời tới ${displayName(u)}`);
+
   // Hủy kết bạn -> unfriend, bỏ khỏi friends
   const onUnfriend = (u) =>
     act(u.id, async () => {
@@ -115,6 +164,7 @@ export default function FriendsPage() {
       setFriends((prev) => prev.filter((x) => x.id !== u.id));
       setSuggestions((prev) => prev.filter((x) => x.id !== u.id));
       setRequests((prev) => prev.filter((x) => x.id !== u.id));
+      setResults((prev) => prev.filter((x) => x.id !== u.id));
       setBlocked(await getBlockedUsers());
     }, `Đã chặn ${displayName(u)}`);
 
@@ -129,6 +179,7 @@ export default function FriendsPage() {
 
   const navItems = [
     { key: "home", label: "Trang chủ", icon: Home },
+    { key: "search", label: "Tìm kiếm", icon: Search },
     { key: "requests", label: "Lời mời kết bạn", icon: UserPlus, badge: requests.length },
     { key: "suggestions", label: "Gợi ý", icon: Users },
     { key: "all", label: "Tất cả bạn bè", icon: List, badge: friends.length },
@@ -213,6 +264,42 @@ export default function FriendsPage() {
                       secondary={{ label: "Gỡ", onClick: () => onDismiss(u) }} />
                   )}
                 />
+              </div>
+            )}
+
+            {tab === "search" && (
+              <div>
+                <div className="text-sm text-gray-500">Tìm kiếm</div>
+                <h2 className="text-2xl font-bold mb-4">Tìm kiếm người dùng</h2>
+
+                <div className="relative mb-6 max-w-xl">
+                  <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Nhập tên hoặc username..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-full border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {searching ? (
+                  <div className="flex items-center gap-2 text-gray-500 py-10 justify-center">
+                    <Loader2 className="animate-spin" /> Đang tìm...
+                  </div>
+                ) : !query.trim() ? (
+                  <Empty text="Nhập từ khóa để tìm người dùng." />
+                ) : results.length === 0 && searched ? (
+                  <Empty text={`Không tìm thấy người dùng khớp "${query.trim()}".`} />
+                ) : (
+                  <Grid>
+                    {results.map((u) => (
+                      <PersonCard key={u.id} u={u} busy={busyId === u.id}
+                        primary={{ label: "Thêm bạn bè", onClick: () => onSendSearch(u) }}
+                        secondary={{ label: "Chặn", onClick: () => onBlock(u) }} />
+                    ))}
+                  </Grid>
+                )}
               </div>
             )}
 

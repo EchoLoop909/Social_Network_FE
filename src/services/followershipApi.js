@@ -69,6 +69,18 @@ export async function rejectFriendRequest(requesterId) {
   }
 }
 
+/**
+ * Tìm kiếm user theo tên / username (GET /auth/getuser?keyword=).
+ * BE lọc LIKE trên username/name/firstname/lastname và ẩn user đã xóa mềm + user bị chặn.
+ * Trả mảng User (env.Object).
+ */
+export async function searchUsers(keyword, pageIdx = 1, pageSize = 50) {
+  const env = await instance.get("/auth/getuser", {
+    params: { keyword, pageIdx, pageSize },
+  });
+  return Array.isArray(env?.Object) ? env.Object : [];
+}
+
 /* ============ Các API danh sách (trả mảng UserSummaryDto trong env.Object) ============ */
 
 /** Danh sách bạn bè (ACCEPTED) của người đang đăng nhập. */
