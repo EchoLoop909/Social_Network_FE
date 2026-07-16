@@ -12,6 +12,7 @@ export async function uploadMedia(files) {
   Array.from(files).forEach((f) => fd.append("files", f));
   const env = await instance.post("/post-media/upload", fd, {
     headers: { "Content-Type": undefined },
+    timeout: 120000, // upload ảnh/video lên Cloudinary có thể lâu -> cho 120s riêng
   });
   return Array.isArray(env?.Object) ? env.Object : [];
 }

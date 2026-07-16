@@ -1,127 +1,391 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { useOutletContext } from 'react-router-dom'; // Quan trọng để đồng bộ với Sidebar
-import { Settings, Grid, Bookmark, User, Camera } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import { Grid, Bookmark, User, Camera, Loader2, Lock, X } from "lucide-react";
+import { getUserById, getUserPosts, updateMyProfile } from "../services/profileApi";
+import { getFriends, getSentRequests } from "../services/followershipApi";
+import { uploadMedia } from "../services/postApi";
+
+const AVATAR_FALLBACK = "https://via.placeholder.com/150?text=?";
+
+function displayName(u) {
+  if (!u) return "";
+  return (
+    u.name ||
+    [u.lastname, u.firstname].filter(Boolean).join(" ").trim() ||
+    u.username ||
+    ""
+  );
+}
+
+// id của mình từ 'sub' trong access_token
+function getMyId() {
+  try {
+    const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
+    if (!t?.access_token) return null;
+    return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+  } catch {
+    return null;
+  }
+}
 
 const ProfilePage = () => {
-  const { setMyInfo } = useOutletContext(); // Nhận hàm từ MainLayout
-  const [userData, setUserData] = useState({
-    username: "", surname: "", firstname: "", lastname: "",
-    photo: null, description: "", postsCount: 0, followers: 44, following: 31
-  });
+  const { userId: routeParam } = useParams();
+  const navigate = useNavigate();
+  const ctx = useOutletContext() || {};
+  const setMyInfo = ctx.setMyInfo;
+
+  const meId = useMemo(() => getMyId(), []);
+  const targetId = routeParam && routeParam !== "me" ? routeParam : meId;
+  const isSelf = !!meId && targetId === meId;
+
+  const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [postCount, setPostCount] = useState(0);
+  const [friends, setFriends] = useState([]); // người theo dõi / bạn bè (ACCEPTED)
+  const [following, setFollowing] = useState([]); // đang theo dõi (đã gửi yêu cầu)
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [modal, setModal] = useState(null); // { title, items } | null
   const [loadingAvatar, setLoadingAvatar] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Lấy dữ liệu cá nhân
-  useEffect(() => {
-    const fetchProfile = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-      try {
-        const payload = JSON.parse(window.atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-        const res = await axios.get("http://localhost:1234/auth/getuser?pageIdx=1&pageSize=100", {
-          headers: { "Authorization": `Bearer ${token}` }
-        });
-        const myInfo = res.data.Object.find(u => u.keycloakId === payload.sub);
-        if (myInfo) setUserData(myInfo);
-      } catch (e) { console.error("Profile fetch error:", e); }
-    };
-    fetchProfile();
-  }, []);
+  // Modal chỉnh sửa hồ sơ (chỉ chính mình)
+  const [editOpen, setEditOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", description: "", isPrivate: false });
+  const [saving, setSaving] = useState(false);
 
-  const handleFileChange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    const token = localStorage.getItem("token");
-    setLoadingAvatar(true);
+  const openEdit = () => {
+    setForm({
+      name: user?.name || "",
+      description: user?.description || "",
+      isPrivate: !!user?.isPrivate,
+    });
+    setEditOpen(true);
+  };
 
+  const saveEdit = async () => {
+    setSaving(true);
+    setErr("");
     try {
-      // 1. Upload Cloudinary
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadRes = await axios.post("http://localhost:1234/post/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data", "Authorization": `Bearer ${token}` }
+      await updateMyProfile({
+        name: form.name.trim(),
+        description: form.description,
+        isPrivate: form.isPrivate,
       });
-      const newUrl = uploadRes.data;
-
-      // 2. Update DB
-      await axios.post("http://localhost:1234/auth/updaloadimg", null, {
-        params: { url: newUrl },
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-
-      // 3. Đồng bộ giao diện
-      setUserData(prev => ({ ...prev, photo: newUrl }));
-      setMyInfo(prev => ({ ...prev, photo: newUrl })); // CẬP NHẬT SIDEBAR NGAY LẬP TỨC
-      alert("Đã cập nhật ảnh đại diện!");
+      setUser((prev) => ({
+        ...prev,
+        name: form.name.trim(),
+        description: form.description,
+        isPrivate: form.isPrivate,
+      }));
+      if (typeof setMyInfo === "function") {
+        setMyInfo((prev) => ({ ...(prev || {}), name: form.name.trim() }));
+      }
+      setEditOpen(false);
     } catch (e) {
-      alert("Lỗi khi upload ảnh!");
+      setErr(e?.response?.data?.Errors?.message || e?.message || "Cập nhật hồ sơ thất bại");
     } finally {
-      setLoadingAvatar(false);
+      setSaving(false);
     }
   };
+
+  const load = useCallback(async () => {
+    if (!targetId) {
+      setErr("Không xác định được người dùng (bạn chưa đăng nhập?)");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setErr("");
+    try {
+      const [u, p, fr, se] = await Promise.all([
+        getUserById(targetId),
+        getUserPosts(targetId),
+        getFriends(isSelf ? undefined : targetId),
+        getSentRequests(isSelf ? undefined : targetId),
+      ]);
+      setUser(u);
+      setPosts(p.items || []);
+      setPostCount(p.totalElements || 0);
+      setFriends(Array.isArray(fr) ? fr : []);
+      setFollowing(Array.isArray(se) ? se : []);
+    } catch (e) {
+      setErr(e?.response?.data?.Errors?.message || e?.message || "Tải trang cá nhân thất bại");
+    } finally {
+      setLoading(false);
+    }
+  }, [targetId, isSelf]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Đổi ảnh đại diện (chỉ chính mình)
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoadingAvatar(true);
+    setErr("");
+    try {
+      const media = await uploadMedia([file]); // [{url,type,...}]
+      const url = media?.[0]?.url;
+      if (!url) throw new Error("Upload ảnh thất bại");
+      await updateMyProfile({ photo: url });
+      setUser((prev) => ({ ...prev, photo: url }));
+      if (typeof setMyInfo === "function") setMyInfo((prev) => ({ ...(prev || {}), photo: url }));
+    } catch (e2) {
+      setErr(e2?.message || "Lỗi khi cập nhật ảnh đại diện");
+    } finally {
+      setLoadingAvatar(false);
+      e.target.value = "";
+    }
+  };
+
+  const openList = (title, items) => setModal({ title, items });
+  const goToUser = (id) => {
+    setModal(null);
+    if (id) navigate(`/u/${id}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32 text-gray-500 gap-2">
+        <Loader2 className="animate-spin" /> Đang tải...
+      </div>
+    );
+  }
+  if (err) {
+    return <div className="max-w-[935px] mx-auto px-5 py-10 text-red-600">{err}</div>;
+  }
+  if (!user) {
+    return <div className="max-w-[935px] mx-auto px-5 py-10 text-gray-500">Không tìm thấy người dùng.</div>;
+  }
+
+  const isPrivateBlocked = !isSelf && user.isPrivate && posts.length === 0 && postCount === 0;
 
   return (
     <div className="flex flex-col items-center w-full">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-      
+
       <div className="w-full max-w-[935px] px-5 py-8">
+        {/* ===== Header ===== */}
         <header className="flex flex-col md:flex-row md:items-start mb-10">
           <div className="flex-shrink-0 mr-0 md:mr-24 flex justify-center md:block mb-6 md:mb-0">
-            <div className="w-[150px] h-[150px] rounded-full p-[2px] border border-gray-200 cursor-pointer overflow-hidden relative group" onClick={() => fileInputRef.current.click()}>
+            <div
+              className={`w-[150px] h-[150px] rounded-full p-[2px] border border-gray-200 overflow-hidden relative group ${isSelf ? "cursor-pointer" : ""}`}
+              onClick={() => isSelf && fileInputRef.current?.click()}
+              title={isSelf ? "Đổi ảnh đại diện" : ""}
+            >
               {loadingAvatar && (
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-10 animate-pulse">
-                  <div className="text-white text-xs">Đang tải...</div>
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
+                  <Loader2 className="animate-spin text-white" />
                 </div>
               )}
-              <img src={userData.photo || "https://via.placeholder.com/150"} alt="avatar" className="w-full h-full rounded-full object-cover" />
+              <img src={user.photo || AVATAR_FALLBACK} alt="avatar" className="w-full h-full rounded-full object-cover" />
+              {isSelf && (
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                  <Camera className="text-white" size={26} />
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex-1 flex flex-col gap-5">
             <div className="flex flex-col md:flex-row items-center gap-4">
-              <span className="text-xl font-normal">{userData.username || "Tên người dùng"}</span>
-              <div className="flex gap-2">
-                <button className="bg-[#efefef] px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-gray-200 transition">Chỉnh sửa</button>
-              </div>
-              <Settings size={24} className="cursor-pointer" />
+              <span className="text-xl font-normal">{user.username || "Người dùng"}</span>
+              {isSelf && (
+                <button
+                  onClick={openEdit}
+                  className="bg-[#efefef] dark:bg-neutral-700 px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-gray-200 dark:hover:bg-neutral-600 transition"
+                >
+                  Chỉnh sửa trang cá nhân
+                </button>
+              )}
             </div>
-            
+
+            {/* Stats — bấm để xem danh sách */}
             <div className="flex justify-center md:justify-start gap-10 text-base">
-              <span><strong>0</strong> bài viết</span>
-              <span><strong>{userData.followers}</strong> người theo dõi</span>
-              <span>Đang theo dõi <strong>{userData.following}</strong> người dùng</span>
+              <span><strong>{postCount}</strong> bài viết</span>
+              <button className="hover:opacity-70" onClick={() => openList("Người theo dõi", friends)}>
+                <strong>{friends.length}</strong> người theo dõi
+              </button>
+              <button className="hover:opacity-70" onClick={() => openList("Đang theo dõi", following)}>
+                Đang theo dõi <strong>{following.length}</strong>
+              </button>
+              <button className="hover:opacity-70" onClick={() => openList("Bạn bè", friends)}>
+                <strong>{friends.length}</strong> bạn bè
+              </button>
             </div>
 
             <div className="text-sm">
-              <div className="font-semibold">{`${userData.firstname || ''} ${userData.lastname || ''}`}</div>
-              <div className="bg-gray-100 w-fit px-2 py-0.5 rounded-full text-xs mt-1 text-gray-600">@{userData.surname}</div>
-              <div className="whitespace-pre-line mt-2 text-gray-700">{userData.description}</div>
+              <div className="font-semibold">{displayName(user)}</div>
+              {user.username && (
+                <div className="bg-gray-100 dark:bg-neutral-800 w-fit px-2 py-0.5 rounded-full text-xs mt-1 text-gray-600 dark:text-gray-300">
+                  @{user.username}
+                </div>
+              )}
+              {user.description && (
+                <div className="whitespace-pre-line mt-2 text-gray-700 dark:text-gray-300">{user.description}</div>
+              )}
             </div>
           </div>
         </header>
 
-        <div className="border-t border-gray-300 flex justify-center gap-14 text-xs tracking-widest font-semibold uppercase">
+        {/* ===== Tabs ===== */}
+        <div className="border-t border-gray-300 dark:border-neutral-700 flex justify-center gap-14 text-xs tracking-widest font-semibold uppercase">
           <TabItem icon={<Grid size={12} />} label="Bài viết" active />
           <TabItem icon={<Bookmark size={12} />} label="Đã lưu" />
           <TabItem icon={<User size={12} />} label="Được gắn thẻ" />
         </div>
 
-        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-          <div className="w-16 h-16 rounded-full border-2 border-black flex items-center justify-center mb-2">
-             <Camera size={34} strokeWidth={1.5} />
+        {/* ===== Lưới bài viết ===== */}
+        {isPrivateBlocked ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+            <div className="w-16 h-16 rounded-full border-2 border-black dark:border-white flex items-center justify-center">
+              <Lock size={30} strokeWidth={1.5} />
+            </div>
+            <h2 className="text-xl font-bold">Đây là tài khoản riêng tư</h2>
+            <p className="text-sm text-gray-500 max-w-sm">Hãy theo dõi và được chấp nhận để xem bài viết.</p>
           </div>
-          <h2 className="text-3xl font-extrabold">Chia sẻ ảnh</h2>
-          <p className="text-sm text-gray-500 max-w-sm">Ảnh của bạn sẽ xuất hiện tại đây sau khi bạn đăng bài.</p>
-        </div>
+        ) : posts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+            <div className="w-16 h-16 rounded-full border-2 border-black dark:border-white flex items-center justify-center mb-2">
+              <Camera size={34} strokeWidth={1.5} />
+            </div>
+            <h2 className="text-3xl font-extrabold">Chưa có bài viết</h2>
+            <p className="text-sm text-gray-500 max-w-sm">Các bài viết sẽ xuất hiện ở đây.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1 md:gap-2 mt-2">
+            {posts.map((p) => {
+              const img = p.mediaList?.[0]?.mediaUrl;
+              const isVideo = (p.mediaList?.[0]?.mediaType || "").toUpperCase() === "VIDEO";
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => navigate(`/post/${p.id}`)}
+                  className="relative aspect-square bg-gray-100 dark:bg-neutral-800 overflow-hidden group"
+                >
+                  {img ? (
+                    isVideo ? (
+                      <video src={img} className="w-full h-full object-cover" muted />
+                    ) : (
+                      <img src={img} alt="" className="w-full h-full object-cover" />
+                    )
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center p-2 text-xs text-gray-500 text-center line-clamp-5">
+                      {p.text || "Bài viết"}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* ===== Modal chỉnh sửa hồ sơ ===== */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !saving && setEditOpen(false)} />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-xl w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 dark:border-neutral-700 px-4 py-3">
+              <span className="font-semibold">Chỉnh sửa trang cá nhân</span>
+              <button onClick={() => !saving && setEditOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 flex flex-col gap-4">
+              <label className="text-sm">
+                <span className="block mb-1 font-medium">Tên hiển thị</span>
+                <input
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Tên hiển thị"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="block mb-1 font-medium">Mô tả</span>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={4}
+                  maxLength={2000}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Giới thiệu về bạn..."
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isPrivate}
+                  onChange={(e) => setForm((f) => ({ ...f, isPrivate: e.target.checked }))}
+                />
+                Tài khoản riêng tư (chỉ bạn bè được chấp nhận mới xem được bài viết)
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 dark:border-neutral-700 px-4 py-3">
+              <button
+                onClick={() => setEditOpen(false)}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-neutral-600 disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+              >
+                {saving && <Loader2 size={16} className="animate-spin" />} Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Modal danh sách user ===== */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setModal(null)} />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-xl w-full max-w-sm max-h-[70vh] flex flex-col shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 dark:border-neutral-700 px-4 py-3">
+              <span className="font-semibold">{modal.title}</span>
+              <button onClick={() => setModal(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {modal.items.length === 0 ? (
+                <div className="text-sm text-gray-500 text-center py-10">Danh sách trống.</div>
+              ) : (
+                modal.items.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => goToUser(u.id)}
+                    className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-left"
+                  >
+                    <img src={u.photo || AVATAR_FALLBACK} alt="" className="w-11 h-11 rounded-full object-cover bg-gray-200" />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate">{u.username}</div>
+                      <div className="text-xs text-gray-500 truncate">{displayName(u)}</div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 const TabItem = ({ icon, label, active }) => (
-  <div className={`flex items-center gap-1.5 py-4 cursor-pointer border-t ${active ? 'border-black text-black' : 'border-transparent text-gray-400'}`}>
-    {icon}<span>{label}</span>
+  <div className={`flex items-center gap-1.5 py-4 cursor-pointer border-t ${active ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-gray-400"}`}>
+    {icon}
+    <span>{label}</span>
   </div>
 );
 

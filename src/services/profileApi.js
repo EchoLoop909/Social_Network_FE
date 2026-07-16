@@ -27,3 +27,8 @@ export async function getUserPosts(userId, pageIdx = 1, pageSize = 50) {
   const list = Array.isArray(env?.Object) ? env.Object : [];
   return { items: list, totalElements: env?.totalElements ?? list.length };
 }
+
+/** Cập nhật hồ sơ của CHÍNH MÌNH (PUT /auth/updateuser, userId lấy từ token). payload: {name, description, photo, isPrivate...}. */
+export async function updateMyProfile(payload) {
+  return instance.put("/auth/updateuser", payload);
+}

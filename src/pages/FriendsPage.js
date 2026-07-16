@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Users, UserPlus, Cake, List, Home, Loader2, AlertCircle, Check, Ban, Search } from "lucide-react";
+import { Users, UserPlus, Cake, List, Home, Loader2, AlertCircle, Check, Ban, Search, SendHorizontal } from "lucide-react";
 import {
   getFriends,
   getFriendRequests,
   getSuggestions,
   getBlockedUsers,
+  getSentRequests,
   sendFriendRequest,
   acceptFriendRequest,
   rejectFriendRequest,
@@ -28,6 +29,7 @@ export default function FriendsPage() {
   const [requests, setRequests] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [blocked, setBlocked] = useState([]);
+  const [sent, setSent] = useState([]); // lời mời mình đã gửi đi
   const [hidden, setHidden] = useState(() => new Set()); // gợi ý bị "Gỡ" (ẩn client)
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -79,16 +81,18 @@ export default function FriendsPage() {
     setLoading(true);
     setErr("");
     try {
-      const [f, r, s, b] = await Promise.all([
+      const [f, r, s, b, sq] = await Promise.all([
         getFriends(),
         getFriendRequests(),
         getSuggestions(),
         getBlockedUsers(),
+        getSentRequests(),
       ]);
       setFriends(f);
       setRequests(r);
       setSuggestions(s);
       setBlocked(b);
+      setSent(sq);
     } catch (e) {
       setErr(e?.message || "Tải dữ liệu bạn bè thất bại");
     } finally {
@@ -133,22 +137,31 @@ export default function FriendsPage() {
       setRequests((prev) => prev.filter((x) => x.id !== u.id));
     }, "Đã xóa lời mời");
 
-  // Thêm bạn bè (gợi ý) -> send, bỏ khỏi suggestions
+  // Thêm bạn bè (gợi ý) -> send, bỏ khỏi suggestions, cập nhật danh sách đã gửi
   const onSend = (u) =>
     act(u.id, async () => {
       await sendFriendRequest(u.id);
       setSuggestions((prev) => prev.filter((x) => x.id !== u.id));
+      setSent(await getSentRequests());
     }, `Đã gửi lời mời tới ${displayName(u)}`);
 
   // Gỡ gợi ý -> ẩn client
   const onDismiss = (u) => setHidden((prev) => new Set(prev).add(u.id));
 
-  // Gửi lời mời từ kết quả tìm kiếm -> send, bỏ khỏi kết quả
+  // Gửi lời mời từ kết quả tìm kiếm -> send, bỏ khỏi kết quả, cập nhật danh sách đã gửi
   const onSendSearch = (u) =>
     act(u.id, async () => {
       await sendFriendRequest(u.id);
       setResults((prev) => prev.filter((x) => x.id !== u.id));
+      setSent(await getSentRequests());
     }, `Đã gửi lời mời tới ${displayName(u)}`);
+
+  // Hủy lời mời đã gửi -> unfriend (xóa quan hệ), bỏ khỏi danh sách đã gửi
+  const onCancelSent = (u) =>
+    act(u.id, async () => {
+      await unfriend(u.id);
+      setSent((prev) => prev.filter((x) => x.id !== u.id));
+    }, `Đã hủy lời mời tới ${displayName(u)}`);
 
   // Hủy kết bạn -> unfriend, bỏ khỏi friends
   const onUnfriend = (u) =>
@@ -165,6 +178,7 @@ export default function FriendsPage() {
       setSuggestions((prev) => prev.filter((x) => x.id !== u.id));
       setRequests((prev) => prev.filter((x) => x.id !== u.id));
       setResults((prev) => prev.filter((x) => x.id !== u.id));
+      setSent((prev) => prev.filter((x) => x.id !== u.id));
       setBlocked(await getBlockedUsers());
     }, `Đã chặn ${displayName(u)}`);
 
@@ -181,6 +195,7 @@ export default function FriendsPage() {
     { key: "home", label: "Trang chủ", icon: Home },
     { key: "search", label: "Tìm kiếm", icon: Search },
     { key: "requests", label: "Lời mời kết bạn", icon: UserPlus, badge: requests.length },
+    { key: "sent", label: "Đã gửi lời mời", icon: SendHorizontal, badge: sent.length },
     { key: "suggestions", label: "Gợi ý", icon: Users },
     { key: "all", label: "Tất cả bạn bè", icon: List, badge: friends.length },
     { key: "blocked", label: "Đã chặn", icon: Ban, badge: blocked.length },
@@ -313,6 +328,22 @@ export default function FriendsPage() {
                       <PersonCard key={u.id} u={u} busy={busyId === u.id}
                         primary={{ label: "Xác nhận", onClick: () => onAccept(u) }}
                         secondary={{ label: "Xóa", onClick: () => onReject(u) }} />
+                    ))}
+                  </Grid>
+                )}
+              </TitledList>
+            )}
+
+            {tab === "sent" && (
+              <TitledList title="Đã gửi lời mời" count={sent.length + " lời mời đang chờ"}>
+                {sent.length === 0 ? (
+                  <Empty text="Bạn chưa gửi lời mời kết bạn nào." />
+                ) : (
+                  <Grid>
+                    {sent.map((u) => (
+                      <PersonCard key={u.id} u={u} busy={busyId === u.id}
+                        primary={{ label: "Hủy lời mời", onClick: () => onCancelSent(u) }}
+                        secondary={{ label: "Chặn", onClick: () => onBlock(u) }} />
                     ))}
                   </Grid>
                 )}

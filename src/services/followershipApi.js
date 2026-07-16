@@ -83,15 +83,25 @@ export async function searchUsers(keyword, pageIdx = 1, pageSize = 50) {
 
 /* ============ Các API danh sách (trả mảng UserSummaryDto trong env.Object) ============ */
 
-/** Danh sách bạn bè (ACCEPTED) của người đang đăng nhập. */
-export async function getFriends() {
-  const env = await instance.get("/friendship/friends");
+/** Danh sách bạn bè (ACCEPTED). Không truyền userId -> của mình; có userId -> của user đó. */
+export async function getFriends(userId) {
+  const env = await instance.get("/friendship/friends", {
+    params: userId && userId.trim() ? { userId: userId.trim() } : {},
+  });
   return Array.isArray(env?.Object) ? env.Object : [];
 }
 
 /** Danh sách lời mời kết bạn ĐẾN người đang đăng nhập. */
 export async function getFriendRequests() {
   const env = await instance.get("/friendship/requests");
+  return Array.isArray(env?.Object) ? env.Object : [];
+}
+
+/** Danh sách lời mời ĐÃ GỬI ĐI (đang theo dõi). Không truyền userId -> của mình; có userId -> của user đó. */
+export async function getSentRequests(userId) {
+  const env = await instance.get("/friendship/sent", {
+    params: userId && userId.trim() ? { userId: userId.trim() } : {},
+  });
   return Array.isArray(env?.Object) ? env.Object : [];
 }
 

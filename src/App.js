@@ -57,7 +57,7 @@ export default function App() {
         <Route path="reels" element={<ReelsPage />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="create" element={<CreatePage />} />
-        <Route path="u/:username" element={<ProfilePage />} />
+        <Route path="u/:userId" element={<ProfilePage />} />
         <Route path="friend" element={<FriendRequestDemo />} />
         <Route path="friends" element={<FriendsPage />} />
         <Route path="stories" element={<StoriesPage />} />

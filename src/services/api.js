@@ -4,7 +4,7 @@ import { BE_URL } from "../config";
 // 1. Cấu hình Server
 const instance = axios.create({
   baseURL: BE_URL, // URL Backend (mặc định http://localhost:8888)
-  timeout: 20000,
+  timeout: 60000, // 60s cho request thường (trước là 20s, dễ timeout khi BE/mạng chậm)
   headers: {
     "Content-Type": "application/json",
   },
