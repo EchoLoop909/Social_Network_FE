@@ -1,3 +1,4 @@
+import "./polyfillGlobal"; // PHẢI đứng đầu tiên (trước khi sockjs-client được nạp)
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";

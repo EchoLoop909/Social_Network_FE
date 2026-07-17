@@ -46,19 +46,23 @@ export async function uploadStoryAudio(file) {
 }
 
 /**
- * Đăng story mới. userId KHÔNG gửi — BE lấy từ token.
+ * Đăng story mới bằng cách CHỌN FILE trực tiếp (multipart) — BE tự upload Cloudinary + suy ra mediaType.
+ * userId KHÔNG gửi — BE lấy từ token.
+ * @param file        File ảnh/video từ máy (bắt buộc)
  * @param expiresInHours số giờ hết hạn (mặc định BE = 24 nếu bỏ trống)
- * @param metadata chuỗi JSON overlay (nhạc/caption/sticker) hoặc null
+ * @param metadata    chuỗi JSON overlay (nhạc/caption/sticker) hoặc null
  */
-export async function createStory({ mediaUrl, mediaType = "IMAGE", caption, isArchived = false, expiresInHours, metadata }) {
+export async function createStory({ file, caption, isArchived = false, expiresInHours, metadata }) {
   try {
-    const env = await instance.post("/story/insert", {
-      mediaUrl,
-      mediaType,
-      caption,
-      isArchived,
-      expiresInHours,
-      metadata,
+    const fd = new FormData();
+    fd.append("file", file);
+    if (caption != null) fd.append("caption", caption);
+    if (isArchived != null) fd.append("isArchived", isArchived);
+    if (expiresInHours != null) fd.append("expiresInHours", expiresInHours);
+    if (metadata != null) fd.append("metadata", metadata);
+    const env = await instance.post("/story/insert", fd, {
+      headers: { "Content-Type": undefined },
+      timeout: 120000,
     });
     return env?.Errors?.message || "CREATE STORY SUCCESS";
   } catch (err) {

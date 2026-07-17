@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Plus, Trash2, X, ChevronLeft, ChevronRight, Loader2, AlertCircle, Check, Star, Music, Smile, Type, Eye } from "lucide-react";
 import Modal from "../components/Modal";
-import { getStories, createStory, deleteStory, uploadStoryMedia, uploadStoryAudio, recordStoryView, getStoryViewers } from "../services/storyRealApi";
+import { getStories, createStory, deleteStory, uploadStoryAudio, recordStoryView, getStoryViewers } from "../services/storyRealApi";
 
 const PLACEHOLDER = "https://via.placeholder.com/64?text=?";
 const EMOJIS = ["😍", "😂", "🔥", "❤️", "👍", "🎉", "😎", "🥳", "✨", "😢", "😮", "💯"];
@@ -37,8 +37,6 @@ export default function StoriesPage() {
   const [openCreate, setOpenCreate] = useState(false);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
-  const [uploaded, setUploaded] = useState(null); // { url, type }
-  const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [expiresInHours, setExpiresInHours] = useState(24);
@@ -101,31 +99,20 @@ export default function StoriesPage() {
   }
 
   function resetCreate() {
-    setFile(null); setPreview(""); setUploaded(null);
-    setUploading(false); setSubmitting(false);
+    setFile(null); setPreview("");
+    setSubmitting(false);
     setExpiresInHours(24); setIsArchived(false);
     setCaptionText(""); setCaptionColor("#ffffff"); setCaptionPos({ x: 0.5, y: 0.85 });
     setStickers([]); setMusic(null); setMusicUploading(false);
   }
 
-  async function onPickFile(e) {
+  // Chỉ chọn file + xem trước cục bộ; file thật sẽ gửi thẳng lúc "Đăng" (BE upload Cloudinary).
+  function onPickFile(e) {
     const f = e.target.files?.[0];
     if (!f) return;
     setFile(f);
     setPreview(URL.createObjectURL(f));
-    setUploaded(null);
-    setUploading(true);
     setErr("");
-    try {
-      const media = await uploadStoryMedia(f);
-      if (!media?.url) throw new Error("Upload không trả về URL");
-      // mediaType lấy theo type do Cloudinary/BE trả về (content-type), fallback theo file trình duyệt
-      setUploaded({ url: media.url, type: media.type || (f.type.startsWith("video") ? "VIDEO" : "IMAGE") });
-    } catch (e2) {
-      setErr(e2?.message || "Upload media thất bại");
-    } finally {
-      setUploading(false);
-    }
     e.target.value = "";
   }
 
@@ -164,7 +151,7 @@ export default function StoriesPage() {
   const removeSticker = (id) => setStickers((prev) => prev.filter((s) => s.id !== id));
 
   async function onSubmitCreate() {
-    if (!uploaded?.url) return;
+    if (!file) return;
     setSubmitting(true);
     setErr("");
     try {
@@ -178,8 +165,7 @@ export default function StoriesPage() {
       if (music?.url) metadata.music = { url: music.url, title: music.title };
 
       await createStory({
-        mediaUrl: uploaded.url,
-        mediaType: uploaded.type,
+        file,
         caption: captionText.trim() || null,
         isArchived,
         expiresInHours: Number(expiresInHours) || 24,
@@ -438,8 +424,8 @@ export default function StoriesPage() {
                 ) : (
                   <img src={preview} alt="" className="w-full h-full object-contain pointer-events-none" />
                 )}
-                {uploading && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white gap-2 text-sm"><Loader2 className="animate-spin" /> Đang tải lên...</div>
+                {submitting && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white gap-2 text-sm"><Loader2 className="animate-spin" /> Đang đăng...</div>
                 )}
 
                 {/* caption có thể kéo */}
@@ -514,7 +500,7 @@ export default function StoriesPage() {
                 </label>
               </div>
 
-              <button disabled={!uploaded?.url || uploading || submitting} onClick={onSubmitCreate}
+              <button disabled={!file || submitting} onClick={onSubmitCreate}
                 className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
                 {submitting && <Loader2 size={16} className="animate-spin" />} Đăng
               </button>
