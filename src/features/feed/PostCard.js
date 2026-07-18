@@ -1,31 +1,84 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2, UserPlus } from "lucide-react";
+import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2, UserPlus, X, Loader2 } from "lucide-react";
+import Modal from "../../components/Modal";
+import { getSharers } from "../../services/postApi";
 import MediaCarousel from "./MediaCarousel";
 import ReactionButton from "./ReactionButton";
 import PostModal from "./PostModal";
 import EditPostDialog from "./EditPostDialog";
 import SharePostDialog from "./SharePostDialog";
 import SharedOriginalCard from "./SharedOriginalCard";
-import { setMyReaction, setCommentCount, toggleSaveLocal, deletePostThunk } from "../../store/feedSlice";
+import { setMyReaction, setCommentCount, setSaved, deletePostThunk } from "../../store/feedSlice";
 import * as likeApi from "../../services/likeApi";
+import { toggleBookmark } from "../../services/bookmarkApi";
+import { addUserTag } from "../../services/postUserTagApi";
+import TagPeopleDialog from "../create/TagPeopleDialog";
 import { sendFriendRequest } from "../../services/followershipApi";
 import { getRootComments } from "../../services/commentApi";
 import { formatNumber } from "../../utils/formatNumber";
 import { timeAgo } from "../../utils/timeAgo";
+import MentionText from "../../utils/MentionText";
 
 export default function PostCard({ post }) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const currentUser = useSelector((s) => s.auth.user);
-  const currentUserId = currentUser?.id;
+  const meIdFromToken = useMemo(() => {
+    try {
+      const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
+      if (!t?.access_token) return null;
+      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+    } catch { return null; }
+  }, []);
+  const currentUserId = currentUser?.id || meIdFromToken;
   const isOwner = currentUserId && post.authorId === currentUserId;
+  const saved = useSelector((s) => s.feed.savedIds || []).includes(post.id);
+
+  // Lưu / bỏ lưu bài (bookmark) — cập nhật lạc quan rồi đồng bộ theo BE.
+  const handleSave = async () => {
+    const next = !saved;
+    dispatch(setSaved({ postId: post.id, saved: next }));
+    try {
+      const real = await toggleBookmark(post.id);
+      dispatch(setSaved({ postId: post.id, saved: real }));
+    } catch {
+      dispatch(setSaved({ postId: post.id, saved: !next })); // lỗi -> hoàn lại
+    }
+  };
 
   const [openModal, setOpenModal] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   const [openShare, setOpenShare] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openTag, setOpenTag] = useState(false);
+  const [peopleModal, setPeopleModal] = useState(null); // { title, loading, users } | null
+
+  const openLikers = async () => {
+    setPeopleModal({ title: "Lượt thích", loading: true, users: [] });
+    try {
+      const data = await likeApi.getReactions("POST", post.id, 1, 50);
+      const users = (data?.likes || []).map((l) => l.user).filter(Boolean);
+      setPeopleModal({ title: "Lượt thích", loading: false, users });
+    } catch { setPeopleModal({ title: "Lượt thích", loading: false, users: [] }); }
+  };
+  const openSharers = async () => {
+    setPeopleModal({ title: "Lượt chia sẻ", loading: true, users: [] });
+    try {
+      const users = await getSharers(post.id);
+      setPeopleModal({ title: "Lượt chia sẻ", loading: false, users: Array.isArray(users) ? users : [] });
+    } catch { setPeopleModal({ title: "Lượt chia sẻ", loading: false, users: [] }); }
+  };
+
+  // Phương án A: gắn thẻ người vào bài đã đăng
+  const onTagConfirm = async (users) => {
+    if (!users?.length) return;
+    try {
+      await Promise.all(users.map((u) => addUserTag(post.id, u.id).catch(() => {})));
+      alert(`Đã gắn thẻ ${users.length} người vào bài viết`);
+    } catch { /* ignore */ }
+  };
   const [friendState, setFriendState] = useState("idle"); // idle | sending | done
 
   // Bài share đã mất gốc thì BE chặn share tiếp -> ẩn/khoá nút share ở FE cho khớp
@@ -137,6 +190,12 @@ export default function PostCard({ post }) {
                   >
                     Chỉnh sửa
                   </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); setOpenTag(true); }}
+                    className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                  >
+                    Gắn thẻ người
+                  </button>
                   <button onClick={handleDelete} className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-700">
                     Xoá bài
                   </button>
@@ -151,6 +210,15 @@ export default function PostCard({ post }) {
       {post.media && post.media.length > 0 && (
         <div className="aspect-square border-y border-gray-100 dark:border-neutral-800">
           <MediaCarousel media={post.media} className="h-full" />
+        </div>
+      )}
+
+      {/* BÀI CHỈ CÓ TEXT: hiển thị nội dung ở khu vực media (phía trên nút like) */}
+      {(!post.media || post.media.length === 0) && !post.isShared && post.caption && (
+        <div className="border-y border-gray-100 dark:border-neutral-800 px-5 py-10 min-h-[160px] flex items-center justify-center">
+          <p className="text-xl leading-relaxed text-center whitespace-pre-wrap break-words">
+            <MentionText text={post.caption} />
+          </p>
         </div>
       )}
 
@@ -185,25 +253,25 @@ export default function PostCard({ post }) {
               <Send size={24} />
             </button>
           </div>
-          <button onClick={() => dispatch(toggleSaveLocal(post.id))} className="hover:opacity-60 transition">
-            <Bookmark size={24} className={post.savedByMe ? "fill-current" : ""} />
+          <button onClick={handleSave} className="hover:opacity-60 transition" title={saved ? "Bỏ lưu" : "Lưu"}>
+            <Bookmark size={24} className={saved ? "fill-current" : ""} />
           </button>
         </div>
 
         <div className="font-semibold text-sm mb-1">
-          {formatNumber(post.likes || 0)} lượt thích
+          <button onClick={openLikers} className="hover:underline">{formatNumber(post.likes || 0)} lượt thích</button>
           {post.shareCount > 0 && (
-            <span className="font-normal text-gray-500">
-              {" "}
-              • {formatNumber(post.shareCount)} lượt chia sẻ
-            </span>
+            <>
+              <span className="font-normal text-gray-500"> • </span>
+              <button onClick={openSharers} className="font-normal text-gray-500 hover:underline">{formatNumber(post.shareCount)} lượt chia sẻ</button>
+            </>
           )}
         </div>
 
-        {post.caption && (
+        {post.media && post.media.length > 0 && post.caption && (
           <div className="text-sm">
             <span className="font-semibold mr-2">{author.username}</span>
-            <span className="whitespace-pre-wrap break-words">{post.caption}</span>
+            <MentionText text={post.caption} className="whitespace-pre-wrap break-words" />
           </div>
         )}
 
@@ -220,6 +288,34 @@ export default function PostCard({ post }) {
       <PostModal post={post} open={openModal} onClose={() => setOpenModal(false)} currentUserId={currentUserId} />
       {openEdit && <EditPostDialog open={openEdit} onClose={() => setOpenEdit(false)} post={post} />}
       {openShare && <SharePostDialog open={openShare} onClose={() => setOpenShare(false)} post={post} />}
+      <TagPeopleDialog open={openTag} onClose={() => setOpenTag(false)} onConfirm={onTagConfirm} />
+
+      {peopleModal && (
+        <Modal open onClose={() => setPeopleModal(null)}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">{peopleModal.title}</h2>
+            <button onClick={() => setPeopleModal(null)} className="text-gray-500 hover:opacity-70"><X size={20} /></button>
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            {peopleModal.loading ? (
+              <div className="flex items-center gap-2 text-gray-500 py-6 justify-center"><Loader2 size={16} className="animate-spin" /> Đang tải...</div>
+            ) : peopleModal.users.length === 0 ? (
+              <div className="text-sm text-gray-500 text-center py-8">Chưa có ai.</div>
+            ) : (
+              peopleModal.users.map((u) => (
+                <button key={u.id} onClick={() => { setPeopleModal(null); navigate(`/u/${u.id}`); }}
+                  className="w-full flex items-center gap-3 px-2 py-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-left">
+                  <img src={u.photo || `https://ui-avatars.com/api/?name=${u.username || "U"}`} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold truncate">{u.username}</div>
+                    {u.name && <div className="text-xs text-gray-500 truncate">{u.name}</div>}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </Modal>
+      )}
     </article>
   );
 }

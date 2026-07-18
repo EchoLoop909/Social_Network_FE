@@ -1,14 +1,16 @@
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
-  Home, Search, Compass, Clapperboard, Send, Heart, PlusSquare, User, ChevronDown, Users, CircleUserRound,
+  Home, Clapperboard, Send, Heart, PlusSquare, ChevronDown, Users,
 } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import { toggleTheme } from "../store/uiSlice";
 import Badge from "../components/Badge";
 import ThemeSwitch from "../components/ThemeSwitch";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import axios from 'axios';
 import { emit } from "../services/eventBus";
+import { connectChat } from "../services/chatSocket";
+import { fetchUnread, pushNew } from "../store/notifSlice";
 import SuggestList from "../features/suggest/SuggestList";
 import CreatePostDialog from "../features/create/CreatePostDialog";
 import Drawer from "../components/Drawer";
@@ -49,6 +51,17 @@ export default function MainLayout({ keycloak }) {
   const dispatch = useDispatch();
   const [myInfo, setMyInfo] = useState(null);
 
+  // id của mình (lấy từ JWT) để subscribe kênh thông báo riêng
+  const meId = useMemo(() => {
+    try {
+      const t = getStoredTokens();
+      if (!t?.access_token) return null;
+      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+    } catch { return null; }
+  }, []);
+  const notifClientRef = useRef(null);
+  const [notifConnected, setNotifConnected] = useState(false);
+
   const isDM = pathname.startsWith("/inbox");
   const isProfile = pathname.startsWith("/u/");
   const unreadDM = useSelector((s) => s.dm.unread);
@@ -77,6 +90,30 @@ export default function MainLayout({ keycloak }) {
     fetchMyInfo();
   }, [pathname]); // Tải lại khi chuyển trang để đồng bộ
 
+  // Tải số thông báo chưa đọc + mở WebSocket nghe kênh riêng của mình (chạy toàn app)
+  useEffect(() => {
+    if (!meId) return;
+    dispatch(fetchUnread());
+    notifClientRef.current = connectChat(() => setNotifConnected(true));
+    return () => { try { notifClientRef.current?.deactivate(); } catch { /* ignore */ } };
+  }, [meId, dispatch]);
+
+  // Khi đã kết nối: subscribe /topic/notifications/{meId}; có noti mới -> đẩy vào store (badge + panel)
+  useEffect(() => {
+    if (!notifConnected || !meId || !notifClientRef.current) return;
+    const sub = notifClientRef.current.subscribe(`/topic/notifications/${meId}`, (frame) => {
+      try {
+        const n = JSON.parse(frame.body);
+        // Tín hiệu đồng bộ im lặng (vd bị hủy kết bạn): chỉ refresh, KHÔNG thêm vào chuông.
+        if (n?.type === "FRIENDSHIP_SYNC") { emit("friendship:changed", n); return; }
+        dispatch(pushNew(n));
+        // Noti liên quan kết bạn -> báo các màn hình (Profile, Friends) tự nạp lại, khỏi F5.
+        if (n?.type === "FOLLOW" || n?.type === "FOLLOW_REQUEST") emit("friendship:changed", n);
+      } catch { /* ignore */ }
+    });
+    return () => { try { sub.unsubscribe(); } catch { /* ignore */ } };
+  }, [notifConnected, meId, dispatch]);
+
   return (
     <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white font-sans">
       <aside className={`fixed left-0 top-0 bottom-0 z-50 flex flex-col gap-2 p-3 border-r border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 transition-all duration-300 ${collapsed ? "w-[72px]" : "w-[72px] xl:w-[245px]"}`}>
@@ -91,12 +128,9 @@ export default function MainLayout({ keycloak }) {
         </div>
 
         <SideItem to="/" icon={Home} label="Trang chủ" end collapsed={collapsed} />
-        <SideItem onClick={() => { setOpenSearch(!openSearch); setOpenNotif(false); }} icon={Search} label="Tìm kiếm" collapsed={collapsed} />
-        <SideItem to="/explore" icon={Compass} label="Khám phá" collapsed={collapsed} />
         <SideItem to="/reels" icon={Clapperboard} label="Reels" collapsed={collapsed} />
         <SideItem to="/inbox" icon={Send} label="Tin nhắn" badge={unreadDM > 0} collapsed={collapsed} />
         <SideItem to="/friends" icon={Users} label="Bạn bè" collapsed={collapsed} />
-        <SideItem to="/stories" icon={CircleUserRound} label="Tin" collapsed={collapsed} />
         <SideItem onClick={() => { setOpenNotif(!openNotif); setOpenSearch(false); }} icon={Heart} label="Thông báo" badge={unreadNotif > 0} collapsed={collapsed} />
         <SideItem onClick={() => setOpenCreate(true)} icon={PlusSquare} label="Tạo" collapsed={collapsed} />
         
@@ -129,7 +163,7 @@ export default function MainLayout({ keycloak }) {
 
       <CreatePostDialog open={openCreate} onClose={() => setOpenCreate(false)} />
       <Drawer open={openSearch} onClose={() => setOpenSearch(false)} width={400} leftPx={75}><SearchPanel /></Drawer>
-      <Drawer open={openNotif} onClose={() => setOpenNotif(false)} width={400} leftPx={75}><NotificationPanel /></Drawer>
+      <Drawer open={openNotif} onClose={() => setOpenNotif(false)} width={400} leftPx={75}><NotificationPanel onClose={() => setOpenNotif(false)} /></Drawer>
     </div>
   );
 }

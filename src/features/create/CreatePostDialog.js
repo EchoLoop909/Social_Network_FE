@@ -1,88 +1,115 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useDispatch } from "react-redux";
 import { Loader2, X, ImagePlus, Plus, GripVertical } from "lucide-react";
 import Modal from "../../components/Modal";
 import { createPostThunk } from "../../store/feedSlice";
 import { uploadMedia } from "../../services/postApi";
+import { searchUsers } from "../../services/followershipApi";
+
+const PLACEHOLDER = "https://via.placeholder.com/40?text=?";
 
 export default function CreatePostDialog({ open, onClose }) {
   const dispatch = useDispatch();
-  // Mỗi item: { id, file, url, isVideo } — 1 mảng duy nhất để xóa/sắp thứ tự luôn đồng bộ
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState([]); // { id, file, url, isVideo }
   const [caption, setCaption] = useState("");
   const [visibility, setVisibility] = useState("PUBLIC");
   const [sharing, setSharing] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [overIdx, setOverIdx] = useState(null);
 
+  // ===== Gợi ý @mention khi gõ trong nội dung =====
+  const taRef = useRef(null);
+  const [mentionQuery, setMentionQuery] = useState(null); // chuỗi sau '@' đang gõ | null
+  const [mentionAnchor, setMentionAnchor] = useState(0);   // vị trí ký tự '@'
+  const [mentionResults, setMentionResults] = useState([]);
+  const [mentionLoading, setMentionLoading] = useState(false);
+
   const reset = () => {
     items.forEach((it) => URL.revokeObjectURL(it.url));
-    setItems([]);
-    setCaption("");
-    setVisibility("PUBLIC");
-    setSharing(false);
-    setDragIdx(null);
-    setOverIdx(null);
+    setItems([]); setCaption(""); setVisibility("PUBLIC"); setSharing(false);
+    setDragIdx(null); setOverIdx(null);
+    setMentionQuery(null); setMentionResults([]); setMentionAnchor(0);
   };
+  const close = () => { reset(); onClose(); };
 
-  const close = () => {
-    reset();
-    onClose();
-  };
-
-  // Chọn file -> append vào danh sách (cho phép chọn thêm nhiều lần)
   const handleFiles = (e) => {
     const picked = Array.from(e.target.files || []);
     if (picked.length === 0) return;
     const mapped = picked.map((f) => ({
       id: `${f.name}-${f.size}-${f.lastModified}-${Math.random().toString(36).slice(2)}`,
-      file: f,
-      url: URL.createObjectURL(f),
-      isVideo: f.type.startsWith("video"),
+      file: f, url: URL.createObjectURL(f), isVideo: f.type.startsWith("video"),
     }));
     setItems((prev) => [...prev, ...mapped]);
-    e.target.value = ""; // reset để chọn lại cùng 1 file vẫn kích hoạt onChange
+    e.target.value = "";
   };
+  const removeAt = (i) => setItems((prev) => {
+    const it = prev[i]; if (it) URL.revokeObjectURL(it.url);
+    return prev.filter((_, idx) => idx !== i);
+  });
 
-  // Xóa 1 ảnh khỏi danh sách (chưa gọi API nên chỉ xóa ở client)
-  const removeAt = (i) => {
-    setItems((prev) => {
-      const it = prev[i];
-      if (it) URL.revokeObjectURL(it.url);
-      return prev.filter((_, idx) => idx !== i);
-    });
-  };
-
-  // Kéo-thả sắp thứ tự (bấm giữ để kéo)
   const onDragStart = (i) => setDragIdx(i);
-  const onDragOver = (e, i) => {
-    e.preventDefault();
-    if (i !== overIdx) setOverIdx(i);
-  };
+  const onDragOver = (e, i) => { e.preventDefault(); if (i !== overIdx) setOverIdx(i); };
   const onDrop = (i) => {
     setItems((prev) => {
       if (dragIdx === null || dragIdx === i) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(dragIdx, 1);
-      next.splice(i, 0, moved);
-      return next;
+      const next = [...prev]; const [m] = next.splice(dragIdx, 1); next.splice(i, 0, m); return next;
     });
-    setDragIdx(null);
-    setOverIdx(null);
+    setDragIdx(null); setOverIdx(null);
+  };
+
+  // Phát hiện token @đang-gõ ngay trước con trỏ
+  const detectMention = (val, caret) => {
+    const upto = val.slice(0, caret);
+    const m = /@([A-Za-z0-9._]*)$/.exec(upto);
+    if (m) {
+      const at = caret - m[0].length;
+      const prevCh = at > 0 ? val[at - 1] : " ";
+      if (at === 0 || /\s/.test(prevCh)) {
+        setMentionAnchor(at);
+        setMentionQuery(m[1]);
+        return;
+      }
+    }
+    setMentionQuery(null);
+    setMentionResults([]);
+  };
+
+  const onCaptionChange = (e) => {
+    setCaption(e.target.value);
+    detectMention(e.target.value, e.target.selectionStart);
+  };
+
+  // Tìm user khi gõ @... (debounce)
+  useEffect(() => {
+    if (mentionQuery == null || mentionQuery.length < 1) { setMentionResults([]); return; }
+    setMentionLoading(true);
+    const t = setTimeout(async () => {
+      try { setMentionResults((await searchUsers(mentionQuery)).slice(0, 6)); }
+      catch { setMentionResults([]); } finally { setMentionLoading(false); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [mentionQuery]);
+
+  // Chọn 1 user -> chèn @username vào đúng vị trí đang gõ
+  const pickMention = (u) => {
+    const before = caption.slice(0, mentionAnchor);
+    const after = caption.slice(mentionAnchor + 1 + (mentionQuery ? mentionQuery.length : 0));
+    const next = `${before}@${u.username} ${after}`;
+    setCaption(next);
+    setMentionQuery(null); setMentionResults([]);
+    setTimeout(() => taRef.current?.focus(), 0);
   };
 
   const share = async () => {
     if (items.length === 0 && !caption.trim()) {
-      alert("Chọn ảnh/video hoặc nhập nội dung");
+      alert("Nhập nội dung hoặc chọn ảnh/video");
       return;
     }
     setSharing(true);
     try {
       let media = [];
-      if (items.length > 0) {
-        // Thứ tự file = thứ tự hiển thị đã sắp -> BE gán 'order' theo thứ tự này
-        media = await uploadMedia(items.map((it) => it.file));
-      }
+      if (items.length > 0) media = await uploadMedia(items.map((it) => it.file));
+      // BE tự tag các @username trong nội dung + gửi thông báo -> không cần gọi tag riêng
       await dispatch(createPostThunk({ text: caption, visibility, media })).unwrap();
       close();
     } catch (e) {
@@ -97,106 +124,90 @@ export default function CreatePostDialog({ open, onClose }) {
     <Modal open={open} onClose={close}>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold">Tạo bài viết mới</h2>
-        <button onClick={close} className="text-gray-500 hover:opacity-70">
-          <X size={20} />
-        </button>
+        <button onClick={close} className="text-gray-500 hover:opacity-70"><X size={20} /></button>
       </div>
 
+      {/* Media (tùy chọn) */}
       {!hasSelection ? (
-        <div className="text-center py-16 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl">
-          <ImagePlus size={48} className="mx-auto text-gray-400 mb-3" />
-          <label className="px-4 py-2 bg-insta-primary text-white rounded-lg cursor-pointer inline-block">
-            Chọn ảnh/video từ máy
-            <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFiles} />
-          </label>
-          <p className="text-xs text-gray-400 mt-3">Có thể chọn nhiều tệp</p>
-        </div>
+        <label className="flex flex-col items-center justify-center gap-2 py-8 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+          <ImagePlus size={40} className="text-gray-400" />
+          <span className="px-4 py-2 bg-insta-primary text-white rounded-lg text-sm">Chọn ảnh/video (tùy chọn)</span>
+          <span className="text-xs text-gray-400">Hoặc chỉ cần nhập nội dung bên dưới</span>
+          <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFiles} />
+        </label>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
-          {/* Preview + xóa + kéo sắp thứ tự */}
-          <div>
-            <p className="text-xs text-gray-400 mb-2">
-              Kéo để sắp thứ tự · di chuột vào ảnh để xóa. Số ở góc là thứ tự đăng.
-            </p>
-            <div className="grid grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
-              {items.map((p, i) => (
-                <div
-                  key={p.id}
-                  draggable
-                  onDragStart={() => onDragStart(i)}
-                  onDragOver={(e) => onDragOver(e, i)}
-                  onDrop={() => onDrop(i)}
-                  onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
-                  className={`group relative rounded overflow-hidden cursor-grab active:cursor-grabbing border-2 transition
-                    ${overIdx === i && dragIdx !== null ? "border-insta-primary" : "border-transparent"}
-                    ${dragIdx === i ? "opacity-50" : ""}`}
-                  title="Kéo để đổi thứ tự"
-                >
-                  {p.isVideo ? (
-                    <video src={p.url} className="object-cover w-full aspect-square pointer-events-none" />
-                  ) : (
-                    <img src={p.url} alt="" className="object-cover w-full aspect-square pointer-events-none" />
-                  )}
-
-                  {/* Số thứ tự */}
-                  <span className="absolute top-1 left-1 bg-black/60 text-white text-[11px] font-semibold rounded-full w-5 h-5 flex items-center justify-center">
-                    {i + 1}
-                  </span>
-
-                  {/* Tay cầm kéo */}
-                  <span className="absolute bottom-1 left-1 bg-black/50 text-white rounded p-0.5 opacity-0 group-hover:opacity-100 transition">
-                    <GripVertical size={12} />
-                  </span>
-
-                  {/* Nút xóa */}
-                  <button
-                    type="button"
-                    onClick={() => removeAt(i)}
-                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
-                    title="Xóa ảnh này"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-
-              {/* Thêm ảnh */}
-              <label className="flex flex-col items-center justify-center gap-1 aspect-square rounded border-2 border-dashed border-gray-300 dark:border-neutral-700 text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
-                <Plus size={20} />
-                <span className="text-[11px]">Thêm</span>
-                <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFiles} />
-              </label>
-            </div>
-          </div>
-
-          {/* Nội dung */}
-          <div className="flex flex-col">
-            <textarea
-              placeholder="Viết chú thích..."
-              className="flex-1 min-h-[120px] border border-gray-300 dark:border-neutral-700 rounded-lg p-2 bg-transparent outline-none text-sm"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-            />
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value)}
-              className="mt-2 border border-gray-300 dark:border-neutral-700 rounded-lg p-2 bg-transparent text-sm"
-            >
-              <option value="PUBLIC">Công khai</option>
-              <option value="FOLLOWERS">Người theo dõi</option>
-              <option value="PRIVATE">Chỉ mình tôi</option>
-            </select>
-            <button
-              className="mt-2 px-3 py-2 bg-insta-primary text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
-              onClick={share}
-              disabled={sharing}
-            >
-              {sharing && <Loader2 size={16} className="animate-spin" />}
-              {sharing ? "Đang đăng..." : "Chia sẻ"}
-            </button>
+        <div>
+          <p className="text-xs text-gray-400 mb-2">Kéo để sắp thứ tự · di chuột vào ảnh để xóa.</p>
+          <div className="grid grid-cols-4 gap-2 max-h-52 overflow-y-auto pr-1">
+            {items.map((p, i) => (
+              <div key={p.id} draggable
+                onDragStart={() => onDragStart(i)} onDragOver={(e) => onDragOver(e, i)} onDrop={() => onDrop(i)}
+                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                className={`group relative rounded overflow-hidden cursor-grab active:cursor-grabbing border-2 transition
+                  ${overIdx === i && dragIdx !== null ? "border-insta-primary" : "border-transparent"} ${dragIdx === i ? "opacity-50" : ""}`}>
+                {p.isVideo ? (
+                  <video src={p.url} className="object-cover w-full aspect-square pointer-events-none" />
+                ) : (
+                  <img src={p.url} alt="" className="object-cover w-full aspect-square pointer-events-none" />
+                )}
+                <span className="absolute top-1 left-1 bg-black/60 text-white text-[11px] font-semibold rounded-full w-5 h-5 flex items-center justify-center">{i + 1}</span>
+                <span className="absolute bottom-1 left-1 bg-black/50 text-white rounded p-0.5 opacity-0 group-hover:opacity-100 transition"><GripVertical size={12} /></span>
+                <button type="button" onClick={() => removeAt(i)} className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"><X size={12} /></button>
+              </div>
+            ))}
+            <label className="flex flex-col items-center justify-center gap-1 aspect-square rounded border-2 border-dashed border-gray-300 dark:border-neutral-700 text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
+              <Plus size={20} /><span className="text-[11px]">Thêm</span>
+              <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFiles} />
+            </label>
           </div>
         </div>
       )}
+
+      {/* Nội dung + gợi ý @mention */}
+      <div className="relative mt-3">
+        <textarea
+          ref={taRef}
+          placeholder="Bạn đang nghĩ gì? Gõ @ để nhắc đến người khác..."
+          className="w-full min-h-[90px] border border-gray-300 dark:border-neutral-700 rounded-lg p-2 bg-transparent outline-none text-sm"
+          value={caption}
+          onChange={onCaptionChange}
+          onKeyUp={(e) => detectMention(e.target.value, e.target.selectionStart)}
+          onClick={(e) => detectMention(e.target.value, e.target.selectionStart)}
+        />
+        {mentionQuery != null && mentionQuery.length >= 1 && (
+          <div className="absolute z-20 left-2 right-2 mt-1 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+            {mentionLoading ? (
+              <div className="p-3 text-sm text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Đang tìm...</div>
+            ) : mentionResults.length === 0 ? (
+              <div className="p-3 text-sm text-gray-500">Không tìm thấy người dùng.</div>
+            ) : (
+              mentionResults.map((u) => (
+                <button key={u.id} type="button" onClick={() => pickMention(u)}
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700 text-left">
+                  <img src={u.photo || PLACEHOLDER} alt="" className="w-8 h-8 rounded-full object-cover bg-gray-200" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold truncate">@{u.username}</div>
+                    {u.name && <div className="text-xs text-gray-500 truncate">{u.name}</div>}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <select value={visibility} onChange={(e) => setVisibility(e.target.value)}
+        className="mt-3 w-full border border-gray-300 dark:border-neutral-700 rounded-lg p-2 bg-transparent text-sm">
+        <option value="PUBLIC">Công khai</option>
+        <option value="FOLLOWERS">Người theo dõi</option>
+        <option value="PRIVATE">Chỉ mình tôi</option>
+      </select>
+
+      <button className="mt-3 w-full px-3 py-2 bg-insta-primary text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+        onClick={share} disabled={sharing}>
+        {sharing && <Loader2 size={16} className="animate-spin" />}
+        {sharing ? "Đang đăng..." : "Chia sẻ"}
+      </button>
     </Modal>
   );
 }

@@ -96,6 +96,34 @@ export async function getStoryViewers(storyId) {
   return Array.isArray(env?.Object) ? env.Object : [];
 }
 
+/** Danh sách id story mà TÔI đã xem (để tô viền "đã xem" theo DB). */
+export async function getSeenStoryIds() {
+  try {
+    const env = await instance.get("/story-view/seen");
+    return Array.isArray(env?.Object) ? env.Object : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Danh sách Highlight (isArchived=true) của 1 user — giữ mãi, dùng cho trang cá nhân. */
+export async function getHighlights(userId) {
+  const params = { pageIdx: 1, pageSize: 50 };
+  if (userId && userId.trim()) params.userId = userId.trim();
+  const env = await instance.get("/story/highlights", { params });
+  return Array.isArray(env?.Object) ? env.Object : [];
+}
+
+/** Bật/tắt Highlight cho 1 story (chỉ chủ tin). isArchived=true để lưu, false để bỏ. */
+export async function setHighlight(id, isArchived) {
+  try {
+    const env = await instance.put("/story/highlight", { id, isArchived });
+    return env?.Errors?.message || "UPDATE HIGHLIGHT SUCCESS";
+  } catch (err) {
+    throw new Error(extractError(err, "Cập nhật Highlight thất bại"));
+  }
+}
+
 /** Xóa story theo id (chỉ chủ tin — BE kiểm tra bằng token). */
 export async function deleteStory(id) {
   try {

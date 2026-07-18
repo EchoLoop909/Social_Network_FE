@@ -28,7 +28,7 @@ import reels from "./reelsSlice";
 const persistConfig = {
   key: "root",
   storage,
-  whitelist: ["ui", "feed"],
+  whitelist: ["ui"], // KHÔNG persist feed nữa: tránh hiển thị like/comment cũ (stale) sau khi reload
 };
 
 const rootReducer = combineReducers({

@@ -14,6 +14,10 @@ import {
   unblockUser,
   searchUsers,
 } from "../services/followershipApi";
+import { on, off } from "../services/eventBus";
+import { useSearchParams, useNavigate } from "react-router-dom";
+
+const VALID_TABS = ["home", "search", "requests", "sent", "suggestions", "all", "blocked"];
 
 const PLACEHOLDER = "https://via.placeholder.com/180?text=?";
 
@@ -24,7 +28,9 @@ function displayName(u) {
 
 /* ============ Trang Bạn bè kiểu Facebook ============ */
 export default function FriendsPage() {
-  const [tab, setTab] = useState("home"); // home | requests | suggestions | all
+  const [searchParams] = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const [tab, setTab] = useState(VALID_TABS.includes(urlTab) ? urlTab : "home"); // home | requests | suggestions | all ...
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
@@ -102,6 +108,13 @@ export default function FriendsPage() {
 
   useEffect(() => {
     loadAll();
+  }, [loadAll]);
+
+  // Real-time: khi có thay đổi kết bạn (gửi/đồng ý lời mời) -> nạp lại danh sách, khỏi F5.
+  useEffect(() => {
+    const handler = () => loadAll();
+    on("friendship:changed", handler);
+    return () => off("friendship:changed", handler);
   }, [loadAll]);
 
   function flash(msg) {
@@ -416,12 +429,14 @@ function Avatar({ u, size = 56 }) {
 
 // Thẻ dạng grid (Facebook: ảnh to phía trên, nút bên dưới)
 function PersonCard({ u, primary, secondary, busy }) {
+  const navigate = useNavigate();
+  const goProfile = () => navigate(`/u/${u.id}`);
   return (
     <div className="border rounded-xl overflow-hidden bg-white dark:bg-neutral-800 flex flex-col">
-      <img src={u.photo || PLACEHOLDER} alt={displayName(u)}
-        className="w-full aspect-square object-cover bg-gray-200" />
+      <img src={u.photo || PLACEHOLDER} alt={displayName(u)} onClick={goProfile}
+        className="w-full aspect-square object-cover bg-gray-200 cursor-pointer" />
       <div className="p-3 flex flex-col gap-2">
-        <div className="font-semibold truncate">{displayName(u)}</div>
+        <div className="font-semibold truncate cursor-pointer hover:underline" onClick={goProfile}>{displayName(u)}</div>
         <div className="text-xs text-gray-400 -mt-1">@{u.username}</div>
         <button disabled={busy} onClick={primary.onClick}
           className="bg-blue-600 text-white rounded-md py-1.5 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
@@ -438,11 +453,13 @@ function PersonCard({ u, primary, secondary, busy }) {
 
 // Hàng trong danh sách "Tất cả bạn bè"
 function FriendRow({ u, onUnfriend, onBlock, busy }) {
+  const navigate = useNavigate();
+  const goProfile = () => navigate(`/u/${u.id}`);
   return (
     <div className="flex items-center gap-3 py-3 px-2 hover:bg-gray-50 dark:hover:bg-neutral-800 rounded-lg">
-      <Avatar u={u} size={60} />
+      <div onClick={goProfile} className="cursor-pointer"><Avatar u={u} size={60} /></div>
       <div className="flex-1 min-w-0">
-        <div className="font-semibold truncate">{displayName(u)}</div>
+        <div className="font-semibold truncate cursor-pointer hover:underline" onClick={goProfile}>{displayName(u)}</div>
         <div className="text-sm text-gray-400 truncate">@{u.username}</div>
       </div>
       <button disabled={busy} onClick={onUnfriend}
@@ -459,11 +476,13 @@ function FriendRow({ u, onUnfriend, onBlock, busy }) {
 
 // Hàng trong danh sách "Đã chặn"
 function BlockedRow({ u, onUnblock, busy }) {
+  const navigate = useNavigate();
+  const goProfile = () => navigate(`/u/${u.id}`);
   return (
     <div className="flex items-center gap-3 py-3 px-2 hover:bg-gray-50 dark:hover:bg-neutral-800 rounded-lg">
-      <Avatar u={u} size={60} />
+      <div onClick={goProfile} className="cursor-pointer"><Avatar u={u} size={60} /></div>
       <div className="flex-1 min-w-0">
-        <div className="font-semibold truncate">{displayName(u)}</div>
+        <div className="font-semibold truncate cursor-pointer hover:underline" onClick={goProfile}>{displayName(u)}</div>
         <div className="text-sm text-gray-400 truncate">@{u.username}</div>
       </div>
       <button disabled={busy} onClick={onUnblock}

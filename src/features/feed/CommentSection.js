@@ -11,6 +11,7 @@ import {
 import * as likeApi from "../../services/likeApi";
 import { incCommentCount, setCommentCount } from "../../store/feedSlice";
 import { timeAgo } from "../../utils/timeAgo";
+import MentionText from "../../utils/MentionText";
 
 /* ---------- Ô nhập bình luận ---------- */
 function CommentBox({ onSubmit, placeholder = "Thêm bình luận...", initial = "", submitLabel = "Đăng", autoFocus }) {
@@ -165,7 +166,7 @@ function CommentItem({ comment, postId, currentUserId, onDeleted, isReply = fals
               </div>
             </div>
           ) : (
-            <div className="text-sm whitespace-pre-wrap break-words">{text}</div>
+            <div className="text-sm whitespace-pre-wrap break-words"><MentionText text={text} /></div>
           )}
         </div>
 

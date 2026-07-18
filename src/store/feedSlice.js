@@ -3,6 +3,14 @@ import { getFeed } from "../services/feedApi";
 import * as likeApi from "../services/likeApi";
 import * as postApi from "../services/postApi";
 
+// Áp 1 thao tác lên bài trong feed (items) VÀ bài đang xem chi tiết (viewing) nếu trùng id.
+// Nhờ vậy like/comment ở trang /post/:id (PostDetailPage) cũng cập nhật ngay, không cần F5.
+function eachTarget(state, id, fn) {
+  const p = state.items.find((x) => x.id === id);
+  if (p) fn(p);
+  if (state.viewing && state.viewing.id === id) fn(state.viewing);
+}
+
 // --- 1. THUNK LẤY FEED (API thật) ---
 export const fetchFeed = createAsyncThunk(
   "feed/fetch",
@@ -18,31 +26,37 @@ export const fetchFeed = createAsyncThunk(
   }
 );
 
+// Đếm tổng số cảm xúc THẬT của 1 bài (gọi lại API sau khi tương tác)
+async function fetchLikeCount(postId) {
+  try {
+    const { reactionSummary } = await likeApi.getReactions("POST", postId, 1, 1);
+    return Object.values(reactionSummary || {}).reduce((a, b) => a + Number(b || 0), 0);
+  } catch {
+    return null;
+  }
+}
+
 // --- 2. REACTION (Like 6 loại) ---
-// react: tạo mới hoặc đổi loại cảm xúc cho bài viết
 export const reactPost = createAsyncThunk(
   "feed/react",
-  async ({ postId, reactionType }, { getState, rejectWithValue }) => {
+  async ({ postId, reactionType }, { rejectWithValue }) => {
     try {
-      const post = getState().feed.items.find((p) => p.id === postId);
-      const prev = post?.myReaction ?? null;
       await likeApi.react("POST", postId, reactionType);
-      return { postId, reactionType, prev };
+      const likes = await fetchLikeCount(postId); // gọi lại API lấy count thật
+      return { postId, reactionType, likes };
     } catch (err) {
       return rejectWithValue(err.message);
     }
   }
 );
 
-// unreact: gỡ cảm xúc của user hiện tại
 export const unreactPost = createAsyncThunk(
   "feed/unreact",
-  async ({ postId }, { getState, rejectWithValue }) => {
+  async ({ postId }, { rejectWithValue }) => {
     try {
-      const post = getState().feed.items.find((p) => p.id === postId);
-      const prev = post?.myReaction ?? null;
       await likeApi.unlike("POST", postId);
-      return { postId, prev };
+      const likes = await fetchLikeCount(postId);
+      return { postId, likes };
     } catch (err) {
       return rejectWithValue(err.message);
     }
@@ -54,10 +68,9 @@ export const createPostThunk = createAsyncThunk(
   "feed/createPost",
   async (dto, { dispatch, rejectWithValue }) => {
     try {
-      await postApi.createPost(dto);
-      // insert không trả về bài mới -> nạp lại feed từ đầu
+      const newId = await postApi.createPost(dto);
       dispatch(fetchFeed(0));
-      return true;
+      return newId; // trả id bài mới để FE gắn thẻ sau khi đăng
     } catch (err) {
       return rejectWithValue(err.message);
     }
@@ -88,8 +101,6 @@ export const deletePostThunk = createAsyncThunk(
   }
 );
 
-// Share (repost nội bộ) 1 bài viết. share không trả về bài mới -> nạp lại feed từ đầu
-// (giống createPostThunk) để bài share mới + share_count cập nhật xuất hiện.
 export const sharePostThunk = createAsyncThunk(
   "feed/sharePost",
   async ({ originalPostId, text }, { dispatch, rejectWithValue }) => {
@@ -108,33 +119,48 @@ const feedSlice = createSlice({
   name: "feed",
   initialState: {
     items: [],
+    viewing: null, // bài đang mở ở trang chi tiết (/post/:id)
+    savedIds: [], // id các bài mình đã lưu (bookmark)
     nextCursor: 0,
     status: "idle",
     error: null,
   },
   reducers: {
+    setSavedIds(state, action) {
+      state.savedIds = Array.isArray(action.payload) ? action.payload : [];
+    },
+    setSaved(state, action) {
+      if (!Array.isArray(state.savedIds)) state.savedIds = [];
+      const { postId, saved } = action.payload;
+      const has = state.savedIds.includes(postId);
+      if (saved && !has) state.savedIds.push(postId);
+      if (!saved && has) state.savedIds = state.savedIds.filter((x) => x !== postId);
+    },
+    // Bài đang xem chi tiết
+    setViewingPost(state, action) {
+      state.viewing = action.payload;
+    },
+    clearViewingPost(state) {
+      state.viewing = null;
+    },
     // Đặt cảm xúc hiện tại của user (nạp từ /like/my-reaction), KHÔNG đổi số đếm
     setMyReaction(state, action) {
       const { postId, reactionType } = action.payload;
-      const post = state.items.find((p) => p.id === postId);
-      if (post) post.myReaction = reactionType;
+      eachTarget(state, postId, (post) => { post.myReaction = reactionType; });
     },
     // Cập nhật số comment khi thêm/xoá (delta = +1 / -1)
     incCommentCount(state, action) {
       const { postId, delta } = action.payload;
-      const post = state.items.find((p) => p.id === postId);
-      if (post) post.commentCount = Math.max(0, (post.commentCount || 0) + delta);
+      eachTarget(state, postId, (post) => { post.commentCount = Math.max(0, (post.commentCount || 0) + delta); });
     },
-    // Đồng bộ số comment thật (từ totalElements) — BE không maintain commentCount
+    // Đồng bộ số comment thật (từ totalElements)
     setCommentCount(state, action) {
       const { postId, count } = action.payload;
-      const post = state.items.find((p) => p.id === postId);
-      if (post) post.commentCount = count;
+      eachTarget(state, postId, (post) => { post.commentCount = count; });
     },
-    // Lưu bài (local-only, BE chưa có API save)
+    // Lưu bài (local-only)
     toggleSaveLocal(state, action) {
-      const post = state.items.find((p) => p.id === action.payload);
-      if (post) post.savedByMe = !post.savedByMe;
+      eachTarget(state, action.payload, (post) => { post.savedByMe = !post.savedByMe; });
     },
   },
   extraReducers: (builder) => {
@@ -156,37 +182,39 @@ const feedSlice = createSlice({
         state.status = "failed";
         state.error = action.payload;
       })
-      // Reaction thành công -> cập nhật myReaction + số like
       .addCase(reactPost.fulfilled, (state, action) => {
-        const { postId, reactionType, prev } = action.payload;
-        const post = state.items.find((p) => p.id === postId);
-        if (!post) return;
-        if (prev == null) post.likes = (post.likes || 0) + 1; // thả mới
-        post.myReaction = reactionType; // đổi loại thì count giữ nguyên
+        const { postId, reactionType, likes } = action.payload;
+        eachTarget(state, postId, (post) => {
+          post.myReaction = reactionType;
+          if (likes != null) post.likes = likes; // count thật từ API
+          else post.likes = (post.likes || 0) + 1; // dự phòng nếu gọi count lỗi
+        });
       })
       .addCase(unreactPost.fulfilled, (state, action) => {
-        const { postId, prev } = action.payload;
-        const post = state.items.find((p) => p.id === postId);
-        if (!post) return;
-        if (prev != null) post.likes = Math.max(0, (post.likes || 0) - 1);
-        post.myReaction = null;
+        const { postId, likes } = action.payload;
+        eachTarget(state, postId, (post) => {
+          post.myReaction = null;
+          if (likes != null) post.likes = likes;
+          else post.likes = Math.max(0, (post.likes || 0) - 1);
+        });
       })
-      // Sửa bài -> patch text/isPinned tại chỗ
       .addCase(updatePostThunk.fulfilled, (state, action) => {
         const { id, text, isPinned, visibility } = action.payload;
-        const post = state.items.find((p) => p.id === id);
-        if (!post) return;
-        if (text !== undefined) post.caption = text;
-        if (isPinned !== undefined) post.isPinned = !!isPinned;
-        if (visibility) post.visibility = visibility;
+        eachTarget(state, id, (post) => {
+          if (text !== undefined) post.caption = text;
+          if (isPinned !== undefined) post.isPinned = !!isPinned;
+          if (visibility) post.visibility = visibility;
+        });
       })
-      // Xoá bài -> gỡ khỏi danh sách
       .addCase(deletePostThunk.fulfilled, (state, action) => {
         state.items = state.items.filter((p) => p.id !== action.payload);
+        if (state.viewing && state.viewing.id === action.payload) state.viewing = null;
       });
   },
 });
 
-export const { setMyReaction, incCommentCount, setCommentCount, toggleSaveLocal } =
-  feedSlice.actions;
+export const {
+  setViewingPost, clearViewingPost, setMyReaction, incCommentCount, setCommentCount, toggleSaveLocal,
+  setSavedIds, setSaved,
+} = feedSlice.actions;
 export default feedSlice.reducer;

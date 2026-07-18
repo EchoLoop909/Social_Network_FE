@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import { ArrowLeft } from "lucide-react";
 import PostCard from "../features/feed/PostCard";
 import { getPostById } from "../services/feedApi";
+import { setViewingPost, clearViewingPost } from "../store/feedSlice";
 
 /**
- * Trang chi tiết 1 bài viết (route /post/:id). Fetch bài theo id rồi render lại
- * bằng PostCard để đồng nhất giao diện với feed (bao gồm cả card share lồng — nên
- * bấm card gốc trong 1 bài share ở đây vẫn điều hướng tiếp sang /post/<id> gốc).
+ * Trang chi tiết 1 bài viết (route /post/:id). Bài được nạp vào store (feed.viewing) rồi
+ * render bằng PostCard — nhờ vậy like/comment (đi qua store) cập nhật NGAY, không cần F5.
  */
 export default function PostDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [post, setPost] = useState(null);
+  const dispatch = useDispatch();
+  const post = useSelector((s) => s.feed.viewing);
   const [status, setStatus] = useState("loading"); // loading | succeeded | notfound | error
 
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function PostDetailPage() {
       try {
         const p = await getPostById(id);
         if (!alive) return;
-        setPost(p);
+        dispatch(setViewingPost(p || null));
         setStatus(p ? "succeeded" : "notfound");
       } catch (e) {
         if (alive) setStatus("error");
@@ -30,8 +32,9 @@ export default function PostDetailPage() {
     })();
     return () => {
       alive = false;
+      dispatch(clearViewingPost());
     };
-  }, [id]);
+  }, [id, dispatch]);
 
   return (
     <div className="max-w-[600px] mx-auto pt-6 pb-16 px-4">

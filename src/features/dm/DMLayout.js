@@ -1,30 +1,66 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { Send, Search, Loader2, MessagesSquare } from "lucide-react";
+import {
+  Search, SquarePen, ChevronDown, Send, Phone, Video, Info,
+  Smile, Mic, Image as ImageIcon, Sticker, Loader2,
+} from "lucide-react";
+import axios from "axios";
 import { getConversations, getHistory, sendMessage, createConversation } from "../../services/messageApi";
 import { searchUsers } from "../../services/followershipApi";
 import { connectChat } from "../../services/chatSocket";
+import { useNavigate } from "react-router-dom";
+import { getStoredTokens } from "../../services/authApi";
+import { BE_URL } from "../../config";
 
-const PLACEHOLDER = "https://via.placeholder.com/48?text=?";
+const PLACEHOLDER = "https://via.placeholder.com/56?text=?";
 
 function displayName(u) {
   if (!u) return "Người dùng";
   const full = [u.lastname, u.firstname].filter(Boolean).join(" ").trim();
   return full || u.name || u.username || "Người dùng";
 }
-function fmtTime(dt) {
+function fmtClock(dt) {
   if (!dt) return "";
-  try { return new Date(dt).toLocaleString("vi-VN"); } catch { return ""; }
+  try {
+    return new Date(dt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  } catch { return ""; }
+}
+function fmtDaySep(dt) {
+  if (!dt) return "";
+  try {
+    return new Date(dt).toLocaleString("en-US", {
+      month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+    });
+  } catch { return ""; }
+}
+function fmtAgo(dt) {
+  if (!dt) return "";
+  try {
+    const diff = Math.max(0, Date.now() - new Date(dt).getTime());
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return "Just now";
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d`;
+    const w = Math.floor(d / 7);
+    return `${w}w`;
+  } catch { return ""; }
 }
 
 export default function DMLayout() {
-  const meId = useMemo(() => {
+  const meAuth = useMemo(() => {
     try {
       const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
-      if (!t?.access_token) return null;
-      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
-    } catch { return null; }
+      if (!t?.access_token) return {};
+      return JSON.parse(atob(t.access_token.split(".")[1])) || {};
+    } catch { return {}; }
   }, []);
+  const meId = meAuth?.sub || null;
+  const meName = meAuth?.preferred_username || meAuth?.name || "you";
 
+  const [mePhoto, setMePhoto] = useState(null);
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -42,6 +78,7 @@ export default function DMLayout() {
   const clientRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const endRef = useRef(null);
+  const searchRef = useRef(null);
 
   const loadConversations = useCallback(async () => {
     setLoadingConvs(true);
@@ -53,6 +90,20 @@ export default function DMLayout() {
       setLoadingConvs(false);
     }
   }, []);
+
+  // Lấy avatar của mình để hiển thị "Your note"
+  useEffect(() => {
+    const token = getStoredTokens()?.access_token;
+    if (!token || !meId) return;
+    axios
+      .get(`${BE_URL}/auth/getuser`, { params: { userId: meId }, headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => {
+        const list = res?.data?.Object;
+        const me = Array.isArray(list) ? (list.find((u) => u.id === meId) || list[0]) : null;
+        if (me?.photo) setMePhoto(me.photo);
+      })
+      .catch(() => {});
+  }, [meId]);
 
   // Mount: nạp danh sách hội thoại + kết nối WebSocket
   useEffect(() => {
@@ -133,112 +184,216 @@ export default function DMLayout() {
     }
   };
 
-  const convLabel = (c) =>
-    c.name || c.lastMessage?.senderName || ("Cuộc trò chuyện " + String(c.conversationId).slice(0, 6));
+  // Thông tin hiển thị của 1 hội thoại (avatar + tên). Chat 1-1 dùng otherUser từ BE.
+  const convView = (c) => {
+    if (c?.otherUser) {
+      return {
+        title: c.otherUser.name || c.otherUser.username || "Người dùng",
+        avatar: c.otherUser.photo || PLACEHOLDER,
+      };
+    }
+    return {
+      title: c?.name || c?.lastMessage?.senderName || ("Cuộc trò chuyện " + String(c?.conversationId).slice(0, 6)),
+      avatar: PLACEHOLDER,
+    };
+  };
+
+  const activeConv = conversations.find((c) => c.conversationId === activeId);
+  const activeView = activeConv ? convView(activeConv) : null;
+  const focusSearch = () => searchRef.current?.focus();
 
   return (
-    <div className="flex h-[calc(100vh-40px)] w-full border border-gray-200 dark:border-neutral-800 rounded-lg overflow-hidden">
-      {/* ===== Cột trái ===== */}
-      <aside className="w-[340px] shrink-0 border-r border-gray-200 dark:border-neutral-800 flex flex-col">
-        <div className="p-4 border-b border-gray-200 dark:border-neutral-800">
-          <h1 className="text-lg font-bold mb-3">Tin nhắn</h1>
+    <div className="flex h-screen bg-white dark:bg-black text-black dark:text-white">
+      {/* ===== Cột danh sách hội thoại ===== */}
+      <aside className="w-[397px] shrink-0 border-r border-gray-200 dark:border-neutral-800 flex flex-col">
+        {/* Header username + soạn tin */}
+        <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+          <button className="flex items-center gap-1 text-xl font-bold">
+            {meName} <ChevronDown size={18} />
+          </button>
+          <button className="p-1 hover:opacity-60" title="New message" onClick={focusSearch}>
+            <SquarePen size={24} />
+          </button>
+        </div>
+
+        {/* Ô tìm kiếm */}
+        <div className="px-6 py-2 relative">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
+              ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm người để nhắn tin..."
-              className="w-full pl-9 pr-3 py-2 rounded-full border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search"
+              className="w-full pl-10 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-neutral-800 text-sm focus:outline-none placeholder-gray-500"
             />
-            {query.trim() && (
-              <div className="absolute z-10 mt-1 w-full bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                {searching ? (
-                  <div className="p-3 text-sm text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Đang tìm...</div>
-                ) : results.length === 0 ? (
-                  <div className="p-3 text-sm text-gray-500">Không tìm thấy.</div>
-                ) : (
-                  results.map((u) => (
-                    <button key={u.id} onClick={() => startChat(u)}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700 text-left">
-                      <img src={u.photo || PLACEHOLDER} alt="" className="w-8 h-8 rounded-full object-cover bg-gray-200" />
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold truncate">{u.username}</div>
-                        <div className="text-xs text-gray-500 truncate">{displayName(u)}</div>
-                      </div>
-                    </button>
-                  ))
-                )}
+          </div>
+          {query.trim() && (
+            <div className="absolute left-6 right-6 z-20 mt-1 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+              {searching ? (
+                <div className="p-3 text-sm text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Đang tìm...</div>
+              ) : results.length === 0 ? (
+                <div className="p-3 text-sm text-gray-500">Không tìm thấy.</div>
+              ) : (
+                results.map((u) => (
+                  <button key={u.id} onClick={() => startChat(u)}
+                    className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-800 text-left">
+                    <img src={u.photo || PLACEHOLDER} alt="" className="w-9 h-9 rounded-full object-cover bg-gray-200" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold truncate">{u.username}</div>
+                      <div className="text-xs text-gray-500 truncate">{displayName(u)}</div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Your note */}
+        <div className="px-6 pt-3 pb-1">
+          <div className="flex flex-col items-center w-[72px]">
+            <div className="relative">
+              <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] px-2 py-1 rounded-xl bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-gray-300 shadow-sm">
+                What's new...
+              </span>
+              <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
+                <img src={mePhoto || "https://via.placeholder.com/56"} alt="" className="w-full h-full rounded-full object-cover border-2 border-white dark:border-black" />
               </div>
-            )}
+            </div>
+            <span className="text-xs mt-1 text-gray-600 dark:text-gray-300">Your note</span>
           </div>
         </div>
 
+        {/* Tabs Messages / Requests */}
+        <div className="px-6 pt-3 pb-2 flex items-center justify-between">
+          <span className="font-bold text-[15px]">Messages</span>
+          <button className="text-sm font-semibold text-gray-500 hover:text-black dark:hover:text-white">Requests</button>
+        </div>
+
+        {/* Danh sách hội thoại */}
         <div className="flex-1 overflow-y-auto">
           {loadingConvs ? (
             <div className="p-4 text-gray-500 flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Đang tải...</div>
           ) : conversations.length === 0 ? (
-            <div className="p-4 text-sm text-gray-500">Chưa có hội thoại. Tìm người ở trên để bắt đầu.</div>
+            <div className="px-6 py-4 text-sm text-gray-500">Chưa có hội thoại. Tìm người ở trên để bắt đầu.</div>
           ) : (
-            conversations.map((c) => (
-              <button key={c.conversationId} onClick={() => openConversation(c.conversationId)}
-                className={`w-full flex flex-col items-start px-4 py-3 border-b border-gray-100 dark:border-neutral-800 text-left hover:bg-gray-50 dark:hover:bg-neutral-800
-                  ${activeId === c.conversationId ? "bg-blue-50 dark:bg-neutral-800" : ""}`}>
-                <div className="font-semibold text-sm truncate w-full">{convLabel(c)}</div>
-                <div className="text-xs text-gray-500 truncate w-full">
-                  {c.lastMessage ? (c.lastMessage.text || "[ảnh]") : "Chưa có tin nhắn"}
-                </div>
-              </button>
-            ))
+            conversations.map((c) => {
+              const v = convView(c);
+              const preview = c.lastMessage ? (c.lastMessage.text || "Đã gửi ảnh") : "Chưa có tin nhắn";
+              const active = activeId === c.conversationId;
+              return (
+                <button key={c.conversationId} onClick={() => openConversation(c.conversationId)}
+                  className={`w-full flex items-center gap-3 px-6 py-2 text-left hover:bg-gray-50 dark:hover:bg-neutral-900 ${active ? "bg-gray-100 dark:bg-neutral-800" : ""}`}>
+                  <img src={v.avatar} alt="" className="w-14 h-14 rounded-full object-cover bg-gray-200 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate">{v.title}</div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {preview}
+                      {c.lastMessageTime ? <span> · {fmtAgo(c.lastMessageTime)}</span> : null}
+                    </div>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </aside>
 
-      {/* ===== Cột phải: khung chat ===== */}
+      {/* ===== Cột chat ===== */}
       <main className="flex-1 flex flex-col min-w-0">
         {err && <div className="m-3 rounded bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm">{err}</div>}
 
         {!activeId ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
-            <MessagesSquare size={56} strokeWidth={1.2} />
-            <div className="text-sm">Chọn một hội thoại hoặc tìm người để bắt đầu nhắn tin.</div>
-            {!connected && <div className="text-xs text-gray-400">(đang kết nối real-time...)</div>}
+          /* Trạng thái trống */
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="w-24 h-24 rounded-full border-2 border-black dark:border-white flex items-center justify-center">
+              <Send size={44} strokeWidth={1.2} />
+            </div>
+            <div className="text-xl mt-1">Your messages</div>
+            <div className="text-sm text-gray-500">Send a message to start a chat.</div>
+            <button onClick={focusSearch}
+              className="mt-1 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg">
+              Send message
+            </button>
+            {!connected && <div className="text-xs text-gray-400 mt-1">(đang kết nối real-time...)</div>}
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+            {/* Header hội thoại */}
+            <div className="h-[74px] px-4 flex items-center justify-between border-b border-gray-200 dark:border-neutral-800 shrink-0">
+              <div className="flex items-center gap-3 min-w-0 cursor-pointer"
+                   onClick={() => activeConv?.otherUser?.id && navigate(`/u/${activeConv.otherUser.id}`)}>
+                <img src={activeView?.avatar || PLACEHOLDER} alt="" className="w-11 h-11 rounded-full object-cover bg-gray-200" />
+                <div className="min-w-0">
+                  <div className="font-bold text-sm truncate hover:underline">{activeView?.title}</div>
+                  <div className="text-xs text-gray-500">Active now</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-5 text-black dark:text-white">
+                <button className="hover:opacity-60"><Phone size={22} /></button>
+                <button className="hover:opacity-60"><Video size={24} /></button>
+                <button className="hover:opacity-60"><Info size={24} /></button>
+              </div>
+            </div>
+
+            {/* Vùng tin nhắn */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-1">
               {loadingMsgs ? (
                 <div className="text-gray-500 flex items-center gap-2 justify-center py-10"><Loader2 className="animate-spin" size={16} /> Đang tải tin...</div>
               ) : messages.length === 0 ? (
                 <div className="text-sm text-gray-400 text-center py-10">Chưa có tin nhắn. Gõ gì đó để bắt đầu.</div>
               ) : (
-                messages.map((m) => {
+                messages.map((m, i) => {
                   const mine = m.senderId === meId;
+                  const prev = messages[i - 1];
+                  const newDay = !prev || new Date(prev.createTime).toDateString() !== new Date(m.createTime).toDateString();
                   return (
-                    <div key={m.id} className={`flex flex-col max-w-[75%] ${mine ? "self-end items-end" : "self-start items-start"}`}>
-                      {!mine && <span className="text-[11px] text-gray-400 ml-1">{m.senderName}</span>}
-                      <div className={`px-3 py-2 rounded-2xl text-sm break-words ${mine ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-neutral-700"}`}>
-                        {m.text || (m.photo ? <img src={m.photo} alt="" className="max-w-[200px] rounded" /> : "")}
+                    <React.Fragment key={m.id}>
+                      {newDay && (
+                        <div className="text-center text-[11px] text-gray-400 my-3">{fmtDaySep(m.createTime)}</div>
+                      )}
+                      <div className={`flex items-end gap-2 max-w-[70%] ${mine ? "self-end flex-row-reverse" : "self-start"}`}>
+                        {!mine && (
+                          <img src={activeView?.avatar || PLACEHOLDER} alt="" className="w-6 h-6 rounded-full object-cover bg-gray-200 shrink-0" />
+                        )}
+                        <div
+                          title={fmtClock(m.createTime)}
+                          className={`px-3.5 py-2 rounded-3xl text-sm break-words ${mine ? "bg-blue-500 text-white" : "bg-gray-100 dark:bg-neutral-800"}`}>
+                          {m.text || (m.photo ? <img src={m.photo} alt="" className="max-w-[220px] rounded-lg" /> : "")}
+                        </div>
                       </div>
-                      <span className="text-[10px] text-gray-400 mx-1">{fmtTime(m.createTime)}</span>
-                    </div>
+                    </React.Fragment>
                   );
                 })
               )}
               <div ref={endRef} />
             </div>
 
-            <div className="border-t border-gray-200 dark:border-neutral-800 p-3 flex items-center gap-2">
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-                placeholder="Nhập tin nhắn..."
-                className="flex-1 px-4 py-2 rounded-full border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button onClick={onSend} disabled={sending || !text.trim()}
-                className="bg-blue-600 text-white rounded-full p-2.5 hover:bg-blue-700 disabled:opacity-50">
-                {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-              </button>
+            {/* Thanh nhập */}
+            <div className="px-4 pb-5 pt-1 shrink-0">
+              <div className="flex items-center gap-3 border border-gray-300 dark:border-neutral-700 rounded-full px-4 py-2.5">
+                <button className="hover:opacity-60 shrink-0"><Smile size={24} /></button>
+                <input
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+                  placeholder="Message..."
+                  className="flex-1 bg-transparent outline-none text-sm placeholder-gray-500"
+                />
+                {text.trim() ? (
+                  <button onClick={onSend} disabled={sending}
+                    className="text-blue-500 font-semibold text-sm hover:text-blue-600 disabled:opacity-50 shrink-0">
+                    {sending ? <Loader2 size={16} className="animate-spin" /> : "Send"}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-4 text-black dark:text-white shrink-0">
+                    <button className="hover:opacity-60"><Mic size={24} /></button>
+                    <button className="hover:opacity-60"><ImageIcon size={24} /></button>
+                    <button className="hover:opacity-60"><Sticker size={24} /></button>
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}

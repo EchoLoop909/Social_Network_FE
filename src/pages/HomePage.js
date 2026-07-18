@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Send } from "lucide-react";
 import FeedList from "../features/feed/FeedList";
+import StoryBar from "../features/stories/StoryBar";
 import { logout } from "../store/authSlice";
 import { getStoredTokens, clearTokens, logoutApi } from "../services/authApi";
 import { getUserById } from "../services/profileApi";
@@ -83,6 +84,7 @@ export default function HomePage() {
     <div className="w-full flex justify-center gap-8 px-4">
       {/* ===== Cột feed (giữa) ===== */}
       <div className="w-full max-w-[630px] pt-6 pb-16">
+        <StoryBar meId={meId} me={user} />
         <FeedList />
       </div>
 

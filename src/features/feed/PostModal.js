@@ -5,6 +5,7 @@ import CommentSection from "./CommentSection";
 import ReactionButton from "./ReactionButton";
 import { formatNumber } from "../../utils/formatNumber";
 import { timeAgo } from "../../utils/timeAgo";
+import MentionText from "../../utils/MentionText";
 
 /** Modal chi tiết bài viết: media bên trái, thông tin + bình luận bên phải. */
 export default function PostModal({ post, open, onClose, currentUserId }) {
@@ -66,7 +67,7 @@ export default function PostModal({ post, open, onClose, currentUserId }) {
                 {post.caption && (
                   <p className="text-sm whitespace-pre-wrap break-words mb-2">
                     <span className="font-semibold mr-2">{post.author.username}</span>
-                    {post.caption}
+                    <MentionText text={post.caption} />
                   </p>
                 )}
               </div>

@@ -1,64 +1,26 @@
-import { mockApiCall } from "./apiMock";
-import { notificationsSeed } from "./data/seed";
+import { instance } from "./api";
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Tầng gọi API thông báo (NotificationController, prefix /notification).
+// Interceptor đã trả thẳng envelope (response.data) + tự gắn Bearer token.
 
-const NOTIFS = {
-  thisWeek: [
-    {
-      id: "n1",
-      avatar: "https://picsum.photos/id/1011/80/80",
-      title: "phamnamphong092012",
-      text: "đã bắt đầu theo dõi bạn.",
-      time: "1 ngày",
-      action: "follow-back",
-    },
-    {
-      id: "n2",
-      avatar: "https://picsum.photos/id/1027/80/80",
-      title: "vutienanhh",
-      text: "đã bắt đầu theo dõi bạn.",
-      time: "3 ngày",
-      action: "follow-back",
-    },
-    {
-      id: "n3",
-      avatar: "https://picsum.photos/id/1020/80/80",
-      title: "nquyn.hue",
-      text: "đã thích tin của bạn.",
-      time: "3 ngày",
-      thumb: "https://picsum.photos/id/1044/56/56",
-    },
-  ],
-  thisMonth: [
-    {
-      id: "n4",
-      avatar: "https://picsum.photos/id/1005/80/80",
-      title: "_bunsayhi",
-      text: "đã bắt đầu theo dõi bạn.",
-      time: "3 tuần",
-      action: "follow-back",
-    },
-  ],
-  earlier: [
-    {
-      id: "n5",
-      avatar: "https://picsum.photos/id/1003/80/80",
-      title: "Tin của bạn",
-      text: "có 2 cảm xúc trên Facebook.",
-      time: "21 thg 9",
-    },
-  ],
-};
-
-export async function getNotifications() {
-  await wait(300);
-  return NOTIFS;
+/** Danh sách thông báo của mình (mới nhất trước). Trả mảng NotificationResponse. */
+export async function fetchNotifList(pageIdx = 1, pageSize = 20) {
+  const env = await instance.get("/notification/list", { params: { pageIdx, pageSize } });
+  return Array.isArray(env?.Object) ? env.Object : [];
 }
 
-export function markAllRead() {
-  return mockApiCall(() => {
-    notificationsSeed.forEach((n) => (n.read = true));
-    return { ok: true };
-  });
+/** Số thông báo chưa đọc (badge chuông). Trả number. */
+export async function fetchUnreadCount() {
+  const env = await instance.get("/notification/unread-count");
+  return typeof env?.Object === "number" ? env.Object : 0;
+}
+
+/** Đánh dấu 1 thông báo đã đọc. */
+export async function markRead(id) {
+  await instance.post("/notification/read", null, { params: { id } });
+}
+
+/** Đánh dấu tất cả thông báo đã đọc. */
+export async function markAllRead() {
+  await instance.post("/notification/read-all");
 }

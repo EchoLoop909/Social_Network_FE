@@ -22,7 +22,14 @@ export async function uploadMedia(files) {
  * userId KHÔNG gửi — BE lấy từ token.
  */
 export async function createPost({ text, visibility = "PUBLIC", media = [] }) {
-  return instance.post("/post/insert", { text, visibility, media });
+  const env = await instance.post("/post/insert", { text, visibility, media });
+  return env?.Object?.id || env?.Object?.postId || null; // id bài vừa tạo (để gắn thẻ)
+}
+
+/** Danh sách user đã chia sẻ (repost) 1 bài viết. */
+export async function getSharers(postId) {
+  const env = await instance.get("/post/sharers", { params: { postId } });
+  return Array.isArray(env?.Object) ? env.Object : [];
 }
 
 /** Sửa bài viết: { id, text, photo, isPinned, visibility }. visibility rỗng = giữ nguyên. */
