@@ -6,33 +6,40 @@ import { reactionByType } from "./reactions";
 import { reactPost, unreactPost } from "../../store/feedSlice";
 
 /**
- * Nút thả cảm xúc cho 1 bài viết. Đọc trạng thái từ `post` (item trong store),
- * ghi qua thunk reactPost / unreactPost. Hover hiện bảng 6 cảm xúc.
+ * Nút thả cảm xúc cho 1 bài viết (6 loại: LIKE/HEART/HAHA/WOW/SAD/ANGRY).
+ * - Hover (desktop) HOẶC bấm/chạm nút -> hiện bảng 6 cảm xúc.
+ * - Chọn 1 cảm xúc -> thả; chọn lại đúng cảm xúc đang có -> bỏ.
+ * Đọc trạng thái từ `post` (item trong store), ghi qua thunk reactPost / unreactPost.
  */
 export default function ReactionButton({ post, showLabel = true }) {
   const dispatch = useDispatch();
-  const [hover, setHover] = useState(false);
+  const [open, setOpen] = useState(false);
   const current = post.myReaction ? reactionByType[post.myReaction] : null;
 
   const pick = (type) => {
-    setHover(false);
-    dispatch(reactPost({ postId: post.id, reactionType: type }));
-  };
-
-  const toggleDefault = () => {
-    if (post.myReaction) dispatch(unreactPost({ postId: post.id }));
-    else dispatch(reactPost({ postId: post.id, reactionType: "LIKE" }));
+    setOpen(false);
+    if (type === post.myReaction) {
+      dispatch(unreactPost({ postId: post.id })); // chọn lại cảm xúc cũ -> bỏ thích
+    } else {
+      dispatch(reactPost({ postId: post.id, reactionType: type }));
+    }
   };
 
   return (
     <div
       className="relative"
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
-      {hover && <ReactionPicker onPick={pick} />}
+      {open && (
+        <>
+          {/* Nền trong suốt: chạm/bấm ra ngoài là đóng bảng cảm xúc (dành cho mobile) */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <ReactionPicker onPick={pick} />
+        </>
+      )}
       <button
-        onClick={toggleDefault}
+        onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-1.5 hover:opacity-70 transition ${current ? current.color + " font-semibold" : ""}`}
       >
         {current ? (

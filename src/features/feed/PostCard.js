@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { MessageCircle, Send, Bookmark, MoreHorizontal, Pin, Repeat2, UserPlus, X, Loader2 } from "lucide-react";
+import { MessageCircle, Bookmark, MoreHorizontal, Pin, Repeat2, UserPlus, UserCheck, X, Loader2 } from "lucide-react";
 import Modal from "../../components/Modal";
 import { getSharers } from "../../services/postApi";
 import MediaCarousel from "./MediaCarousel";
 import ReactionButton from "./ReactionButton";
 import PostModal from "./PostModal";
+import ReactionsModal from "./ReactionsModal";
 import EditPostDialog from "./EditPostDialog";
 import SharePostDialog from "./SharePostDialog";
 import SharedOriginalCard from "./SharedOriginalCard";
@@ -16,6 +17,7 @@ import { toggleBookmark } from "../../services/bookmarkApi";
 import { addUserTag } from "../../services/postUserTagApi";
 import TagPeopleDialog from "../create/TagPeopleDialog";
 import { sendFriendRequest } from "../../services/followershipApi";
+import { loadRelationship, invalidateRelationship } from "../../services/relationshipCache";
 import { getRootComments } from "../../services/commentApi";
 import { formatNumber } from "../../utils/formatNumber";
 import { timeAgo } from "../../utils/timeAgo";
@@ -35,6 +37,10 @@ export default function PostCard({ post }) {
   const currentUserId = currentUser?.id || meIdFromToken;
   const isOwner = currentUserId && post.authorId === currentUserId;
   const saved = useSelector((s) => s.feed.savedIds || []).includes(post.id);
+  const commentCount = useSelector((s) => {
+    const p = (s.feed.items || []).find((x) => x.id === post.id) || (s.feed.viewing?.id === post.id ? s.feed.viewing : null);
+    return p?.commentCount ?? post.commentCount ?? 0;
+  });
 
   // Lưu / bỏ lưu bài (bookmark) — cập nhật lạc quan rồi đồng bộ theo BE.
   const handleSave = async () => {
@@ -54,15 +60,7 @@ export default function PostCard({ post }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [openTag, setOpenTag] = useState(false);
   const [peopleModal, setPeopleModal] = useState(null); // { title, loading, users } | null
-
-  const openLikers = async () => {
-    setPeopleModal({ title: "Lượt thích", loading: true, users: [] });
-    try {
-      const data = await likeApi.getReactions("POST", post.id, 1, 50);
-      const users = (data?.likes || []).map((l) => l.user).filter(Boolean);
-      setPeopleModal({ title: "Lượt thích", loading: false, users });
-    } catch { setPeopleModal({ title: "Lượt thích", loading: false, users: [] }); }
-  };
+  const [reactionsOpen, setReactionsOpen] = useState(false); // modal xem cảm xúc theo loại
   const openSharers = async () => {
     setPeopleModal({ title: "Lượt chia sẻ", loading: true, users: [] });
     try {
@@ -79,14 +77,19 @@ export default function PostCard({ post }) {
       alert(`Đã gắn thẻ ${users.length} người vào bài viết`);
     } catch { /* ignore */ }
   };
-  const [friendState, setFriendState] = useState("idle"); // idle | sending | done
+
+  // Quan hệ với tác giả: null (đang tải) | "friend" (bạn bè) | "following" (đang theo dõi) | "none"
+  const [relation, setRelation] = useState(null);
+  const [friendSending, setFriendSending] = useState(false);
 
   // Bài share đã mất gốc thì BE chặn share tiếp -> ẩn/khoá nút share ở FE cho khớp
   const shareDisabled = post.isShared && post.originalLost;
   const hydrated = useRef(false);
 
-  const author = post.author || { username: "Người dùng", avatar: "" };
-  const avatar = author.avatar || `https://ui-avatars.com/api/?name=${author.username}`;
+  const author = post.author || { username: "Người dùng", name: "", avatar: "" };
+  // Avatar mặc định = viết tắt HỌ TÊN người dùng (vd "Hoàng Hiệp" -> "HH"); nếu có ảnh thì dùng ảnh.
+  const initialsName = (author.name && author.name.trim()) ? author.name.trim() : author.username;
+  const avatar = author.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(initialsName)}`;
 
   // Nạp cảm xúc hiện tại + số bình luận thật khi card xuất hiện
   useEffect(() => {
@@ -110,23 +113,34 @@ export default function PostCard({ post }) {
     };
   }, [post.id, currentUserId]); // eslint-disable-line
 
-  // Gửi lời mời kết bạn tới tác giả bài viết (post.authorId là id thật từ BE).
-  // Lưu ý: chưa có API lấy trạng thái quan hệ hiện tại, nên nút luôn khởi tạo ở "idle";
-  // nếu BE báo "đã gửi trước đó" / "đã là bạn bè" thì coi như đã xong (done).
+  // Xác định quan hệ với tác giả để hiển thị đúng nút (Kết bạn / Đang theo dõi / ẩn nếu đã là bạn)
+  useEffect(() => {
+    if (isOwner || !currentUserId || !post.authorId) return;
+    let alive = true;
+    loadRelationship().then(({ friendIds, followingIds }) => {
+      if (!alive) return;
+      if (friendIds.has(post.authorId)) setRelation("friend");
+      else if (followingIds.has(post.authorId)) setRelation("following");
+      else setRelation("none");
+    });
+    return () => { alive = false; };
+  }, [post.authorId, currentUserId, isOwner]);
+
+  // Gửi lời mời kết bạn tới tác giả (chỉ khi đang "none"). Thành công -> chuyển sang "following".
   const handleAddFriend = async () => {
-    if (friendState !== "idle") return;
-    setFriendState("sending");
+    if (friendSending || relation !== "none") return;
+    setFriendSending(true);
     try {
       await sendFriendRequest(post.authorId);
-      setFriendState("done");
+      setRelation("following");
+      invalidateRelationship(); // để các card khác / lần sau nạp lại đúng
     } catch (e) {
-      const msg = e?.response?.data?.Errors?.message || "Gửi lời mời thất bại";
-      if (/đã gửi|đã là bạn/i.test(msg)) {
-        setFriendState("done");
-      } else {
-        setFriendState("idle");
-      }
-      alert(msg);
+      const msg = e?.message || "Gửi lời mời thất bại";
+      if (/đã gửi|đang theo dõi/i.test(msg)) setRelation("following");
+      else if (/đã là bạn/i.test(msg)) setRelation("friend");
+      else alert(msg);
+    } finally {
+      setFriendSending(false);
     }
   };
 
@@ -148,29 +162,36 @@ export default function PostCard({ post }) {
           <img
             src={avatar}
             alt={author.username}
-            className="w-full h-full rounded-full object-cover border-2 border-white dark:border-black"
+            className="w-full h-full rounded-full object-cover border-2 border-white dark:border-black cursor-pointer"
+            onClick={() => post.authorId && navigate(`/u/${post.authorId}`)}
             onError={(e) => {
-              e.target.src = "https://ui-avatars.com/api/?name=" + author.username;
+              e.target.src = "https://ui-avatars.com/api/?name=" + encodeURIComponent(initialsName);
             }}
           />
         </div>
         <div className="flex-1 min-w-0">
-          <span className="font-semibold text-sm">{author.username}</span>
+          <span
+            className="font-semibold text-sm cursor-pointer hover:underline"
+            onClick={() => post.authorId && navigate(`/u/${post.authorId}`)}
+          >
+            {author.username}
+          </span>
           {post.isPinned && <Pin size={13} className="inline ml-2 text-gray-400" />}
           <span className="text-gray-400 text-xs ml-2">• {timeAgo(post.ts)}</span>
         </div>
 
-        {!isOwner && currentUserId && (
+        {/* Nút quan hệ: đã là bạn -> ẩn; đang theo dõi -> nhãn "Đang theo dõi"; chưa -> "Kết bạn" */}
+        {!isOwner && currentUserId && relation && relation !== "friend" && (
           <button
             onClick={handleAddFriend}
-            disabled={friendState !== "idle"}
+            disabled={friendSending || relation === "following"}
             className="flex items-center gap-1 text-xs font-semibold text-insta-primary disabled:text-gray-400 mr-1"
           >
-            <UserPlus size={16} />
-            {friendState === "sending"
+            {relation === "following" ? <UserCheck size={16} /> : <UserPlus size={16} />}
+            {friendSending
               ? "Đang gửi..."
-              : friendState === "done"
-              ? "Đã gửi lời mời"
+              : relation === "following"
+              ? "Đang theo dõi"
               : "Kết bạn"}
           </button>
         )}
@@ -233,59 +254,55 @@ export default function PostCard({ post }) {
         </div>
       )}
 
-      {/* ACTIONS */}
-      <div className="px-3 pt-2">
-        <div className="flex justify-between mb-2 items-center">
-          <div className="flex gap-4 items-center">
-            <ReactionButton post={post} showLabel={false} />
-            <button onClick={() => setOpenModal(true)} className="hover:opacity-60 transition">
+      {/* CAPTION cho bài CÓ media: đặt DƯỚI ảnh/video, TRÊN khu vực like/comment */}
+      {post.media && post.media.length > 0 && post.caption && (
+        <div className="px-3 pt-3 text-sm">
+          <span className="font-semibold mr-2">{author.username}</span>
+          <MentionText text={post.caption} className="whitespace-pre-wrap break-words" />
+        </div>
+      )}
+
+      {/* ACTIONS — icon kèm SỐ đếm (like / comment / share) */}
+      <div className="px-3 pt-2 pb-3">
+        <div className="flex justify-between items-center">
+          <div className="flex gap-5 items-center text-sm">
+            {/* Thích */}
+            <div className="flex items-center gap-1.5">
+              <ReactionButton post={post} showLabel={false} />
+              <button onClick={() => setReactionsOpen(true)} className="font-semibold hover:underline">
+                {formatNumber(post.likes || 0)}
+              </button>
+            </div>
+            {/* Bình luận */}
+            <button onClick={() => setOpenModal(true)} className="flex items-center gap-1.5 hover:opacity-60 transition">
               <MessageCircle size={24} />
+              <span className="font-semibold">{formatNumber(commentCount)}</span>
             </button>
-            <button
-              onClick={() => setOpenShare(true)}
-              disabled={shareDisabled}
-              title={shareDisabled ? "Bài viết đã mất bài gốc, không thể chia sẻ" : "Chia sẻ"}
-              className="hover:opacity-60 transition disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <Repeat2 size={24} />
-            </button>
-            <button className="hover:opacity-60 transition">
-              <Send size={24} />
-            </button>
+            {/* Chia sẻ */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setOpenShare(true)}
+                disabled={shareDisabled}
+                title={shareDisabled ? "Bài viết đã mất bài gốc, không thể chia sẻ" : "Chia sẻ"}
+                className="hover:opacity-60 transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Repeat2 size={24} />
+              </button>
+              {post.shareCount > 0 && (
+                <button onClick={openSharers} className="font-semibold hover:underline">
+                  {formatNumber(post.shareCount)}
+                </button>
+              )}
+            </div>
           </div>
           <button onClick={handleSave} className="hover:opacity-60 transition" title={saved ? "Bỏ lưu" : "Lưu"}>
             <Bookmark size={24} className={saved ? "fill-current" : ""} />
           </button>
         </div>
-
-        <div className="font-semibold text-sm mb-1">
-          <button onClick={openLikers} className="hover:underline">{formatNumber(post.likes || 0)} lượt thích</button>
-          {post.shareCount > 0 && (
-            <>
-              <span className="font-normal text-gray-500"> • </span>
-              <button onClick={openSharers} className="font-normal text-gray-500 hover:underline">{formatNumber(post.shareCount)} lượt chia sẻ</button>
-            </>
-          )}
-        </div>
-
-        {post.media && post.media.length > 0 && post.caption && (
-          <div className="text-sm">
-            <span className="font-semibold mr-2">{author.username}</span>
-            <MentionText text={post.caption} className="whitespace-pre-wrap break-words" />
-          </div>
-        )}
-
-        <button
-          onClick={() => setOpenModal(true)}
-          className="block text-gray-500 text-sm mt-1"
-        >
-          {post.commentCount > 0 ? `Xem tất cả ${formatNumber(post.commentCount)} bình luận` : "Viết bình luận..."}
-        </button>
-
-        <div className="text-gray-400 text-[11px] uppercase mt-2 pb-3">{timeAgo(post.ts)}</div>
       </div>
 
       <PostModal post={post} open={openModal} onClose={() => setOpenModal(false)} currentUserId={currentUserId} />
+      <ReactionsModal open={reactionsOpen} onClose={() => setReactionsOpen(false)} targetId={post.id} />
       {openEdit && <EditPostDialog open={openEdit} onClose={() => setOpenEdit(false)} post={post} />}
       {openShare && <SharePostDialog open={openShare} onClose={() => setOpenShare(false)} post={post} />}
       <TagPeopleDialog open={openTag} onClose={() => setOpenTag(false)} onConfirm={onTagConfirm} />
@@ -305,7 +322,7 @@ export default function PostCard({ post }) {
               peopleModal.users.map((u) => (
                 <button key={u.id} onClick={() => { setPeopleModal(null); navigate(`/u/${u.id}`); }}
                   className="w-full flex items-center gap-3 px-2 py-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-left">
-                  <img src={u.photo || `https://ui-avatars.com/api/?name=${u.username || "U"}`} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
+                  <img src={u.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || u.username || "U")}`} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-200" />
                   <div className="min-w-0">
                     <div className="text-sm font-semibold truncate">{u.username}</div>
                     {u.name && <div className="text-xs text-gray-500 truncate">{u.name}</div>}

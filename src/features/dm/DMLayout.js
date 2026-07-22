@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   Search, SquarePen, ChevronDown, Send, Phone, Video, Info,
-  Smile, Mic, Image as ImageIcon, Sticker, Loader2,
+  Smile, Mic, Image as ImageIcon, Sticker, Loader2, Users, Check, X,
 } from "lucide-react";
 import axios from "axios";
-import { getConversations, getHistory, sendMessage, createConversation } from "../../services/messageApi";
+import { getConversations, getHistory, sendMessage, createConversation, markRead, getReadState } from "../../services/messageApi";
 import { searchUsers } from "../../services/followershipApi";
 import { connectChat } from "../../services/chatSocket";
 import { useNavigate } from "react-router-dom";
 import { getStoredTokens } from "../../services/authApi";
 import { BE_URL } from "../../config";
+import Modal from "../../components/Modal";
 
 const PLACEHOLDER = "https://via.placeholder.com/56?text=?";
 
@@ -75,6 +76,17 @@ export default function DMLayout() {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
 
+  // Trạng thái "đã xem" của thành viên khác cho hội thoại đang mở: [{ userId, photo, lastReadMessageId }]
+  const [readState, setReadState] = useState([]);
+
+  // Tạo NHÓM
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [groupQuery, setGroupQuery] = useState("");
+  const [groupResults, setGroupResults] = useState([]);
+  const [groupPicked, setGroupPicked] = useState([]); // [user]
+  const [groupCreating, setGroupCreating] = useState(false);
+
   const clientRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const endRef = useRef(null);
@@ -119,6 +131,9 @@ export default function DMLayout() {
       try {
         const msg = JSON.parse(frame.body);
         setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        // Tin của người khác -> mình coi như đã đọc; đồng thời cập nhật lại "đã xem" của họ.
+        if (msg.senderId && msg.senderId !== meId) markRead(activeId);
+        getReadState(activeId).then(setReadState);
       } catch { /* ignore */ }
     });
     return () => { try { sub.unsubscribe(); } catch { /* ignore */ } };
@@ -141,13 +156,29 @@ export default function DMLayout() {
     return () => clearTimeout(t);
   }, [query, meId]);
 
+  // Tìm người cho hộp thoại TẠO NHÓM (debounce 400ms)
+  useEffect(() => {
+    const q = groupQuery.trim();
+    if (!q) { setGroupResults([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const list = await searchUsers(q);
+        setGroupResults((meId ? list.filter((u) => u.id !== meId) : list).slice(0, 8));
+      } catch { /* ignore */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [groupQuery, meId]);
+
   const openConversation = async (id) => {
     setActiveId(id);
     setLoadingMsgs(true);
     setErr("");
+    setReadState([]);
     try {
       const list = await getHistory(id);   // BE trả mới nhất trước
       setMessages([...list].reverse());     // đảo lại: cũ trên, mới dưới
+      markRead(id);                          // mình đã đọc tới tin mới nhất
+      getReadState(id).then(setReadState);   // trạng thái "đã xem" của người khác
     } catch (e) {
       setErr(e?.message || "Tải tin nhắn thất bại");
     } finally {
@@ -190,17 +221,45 @@ export default function DMLayout() {
       return {
         title: c.otherUser.name || c.otherUser.username || "Người dùng",
         avatar: c.otherUser.photo || PLACEHOLDER,
+        members: null,
       };
     }
     return {
       title: c?.name || c?.lastMessage?.senderName || ("Cuộc trò chuyện " + String(c?.conversationId).slice(0, 6)),
       avatar: PLACEHOLDER,
+      members: Array.isArray(c?.members) ? c.members : [], // nhóm -> ghép avatar thành viên
     };
   };
 
   const activeConv = conversations.find((c) => c.conversationId === activeId);
   const activeView = activeConv ? convView(activeConv) : null;
   const focusSearch = () => searchRef.current?.focus();
+
+  // "Đã xem": người khác đã đọc tới tin nào -> nếu phủ tin cuối MÌNH gửi thì hiện "Đã xem".
+  const otherReadId = readState[0]?.lastReadMessageId;
+  const readIdx = otherReadId ? messages.findIndex((m) => m.id === otherReadId) : -1;
+  let myLastIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].senderId === meId) { myLastIdx = i; break; } }
+  const showSeen = myLastIdx >= 0 && readIdx >= myLastIdx;
+
+  // Tạo nhóm: tìm người (debounce)
+  const togglePick = (u) =>
+    setGroupPicked((prev) => (prev.some((x) => x.id === u.id) ? prev.filter((x) => x.id !== u.id) : [...prev, u]));
+  const submitGroup = async () => {
+    if (groupPicked.length < 2) { setErr("Chọn ít nhất 2 người để tạo nhóm"); return; }
+    setGroupCreating(true);
+    try {
+      const conv = await createConversation(groupPicked.map((u) => u.id), groupName.trim() || null);
+      const cid = conv?.conversationId || conv?.id;
+      setGroupOpen(false); setGroupName(""); setGroupQuery(""); setGroupResults([]); setGroupPicked([]);
+      await loadConversations();
+      if (cid) openConversation(cid);
+    } catch (e) {
+      setErr(e?.message || "Tạo nhóm thất bại");
+    } finally {
+      setGroupCreating(false);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-white dark:bg-black text-black dark:text-white">
@@ -211,9 +270,14 @@ export default function DMLayout() {
           <button className="flex items-center gap-1 text-xl font-bold">
             {meName} <ChevronDown size={18} />
           </button>
-          <button className="p-1 hover:opacity-60" title="New message" onClick={focusSearch}>
-            <SquarePen size={24} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button className="p-1 hover:opacity-60" title="Tạo nhóm" onClick={() => { setGroupOpen(true); setErr(""); }}>
+              <Users size={22} />
+            </button>
+            <button className="p-1 hover:opacity-60" title="New message" onClick={focusSearch}>
+              <SquarePen size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Ô tìm kiếm */}
@@ -254,14 +318,11 @@ export default function DMLayout() {
         <div className="px-6 pt-3 pb-1">
           <div className="flex flex-col items-center w-[72px]">
             <div className="relative">
-              <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] px-2 py-1 rounded-xl bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-gray-300 shadow-sm">
-                What's new...
-              </span>
               <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
                 <img src={mePhoto || "https://via.placeholder.com/56"} alt="" className="w-full h-full rounded-full object-cover border-2 border-white dark:border-black" />
               </div>
             </div>
-            <span className="text-xs mt-1 text-gray-600 dark:text-gray-300">Your note</span>
+            <span className="text-xs mt-1 text-gray-600 dark:text-gray-300 truncate w-[72px] text-center">{meName}</span>
           </div>
         </div>
 
@@ -285,7 +346,7 @@ export default function DMLayout() {
               return (
                 <button key={c.conversationId} onClick={() => openConversation(c.conversationId)}
                   className={`w-full flex items-center gap-3 px-6 py-2 text-left hover:bg-gray-50 dark:hover:bg-neutral-900 ${active ? "bg-gray-100 dark:bg-neutral-800" : ""}`}>
-                  <img src={v.avatar} alt="" className="w-14 h-14 rounded-full object-cover bg-gray-200 shrink-0" />
+                  <ConvAvatar view={v} size={56} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate">{v.title}</div>
                     <div className="text-xs text-gray-500 truncate">
@@ -324,7 +385,7 @@ export default function DMLayout() {
             <div className="h-[74px] px-4 flex items-center justify-between border-b border-gray-200 dark:border-neutral-800 shrink-0">
               <div className="flex items-center gap-3 min-w-0 cursor-pointer"
                    onClick={() => activeConv?.otherUser?.id && navigate(`/u/${activeConv.otherUser.id}`)}>
-                <img src={activeView?.avatar || PLACEHOLDER} alt="" className="w-11 h-11 rounded-full object-cover bg-gray-200" />
+                {activeView && <ConvAvatar view={activeView} size={44} />}
                 <div className="min-w-0">
                   <div className="font-bold text-sm truncate hover:underline">{activeView?.title}</div>
                   <div className="text-xs text-gray-500">Active now</div>
@@ -347,13 +408,15 @@ export default function DMLayout() {
                 messages.map((m, i) => {
                   const mine = m.senderId === meId;
                   const prev = messages[i - 1];
+                  const gapMin = prev ? (new Date(m.createTime) - new Date(prev.createTime)) / 60000 : Infinity;
                   const newDay = !prev || new Date(prev.createTime).toDateString() !== new Date(m.createTime).toDateString();
+                  const showDivider = newDay || gapMin > 30; // đổi ngày HOẶC cách tin trước > 30 phút
                   return (
                     <React.Fragment key={m.id}>
-                      {newDay && (
+                      {showDivider && (
                         <div className="text-center text-[11px] text-gray-400 my-3">{fmtDaySep(m.createTime)}</div>
                       )}
-                      <div className={`flex items-end gap-2 max-w-[70%] ${mine ? "self-end flex-row-reverse" : "self-start"}`}>
+                      <div className={`group flex items-end gap-2 max-w-[70%] ${mine ? "self-end flex-row-reverse" : "self-start"}`}>
                         {!mine && (
                           <img src={activeView?.avatar || PLACEHOLDER} alt="" className="w-6 h-6 rounded-full object-cover bg-gray-200 shrink-0" />
                         )}
@@ -362,10 +425,21 @@ export default function DMLayout() {
                           className={`px-3.5 py-2 rounded-3xl text-sm break-words ${mine ? "bg-blue-500 text-white" : "bg-gray-100 dark:bg-neutral-800"}`}>
                           {m.text || (m.photo ? <img src={m.photo} alt="" className="max-w-[220px] rounded-lg" /> : "")}
                         </div>
+                        {/* Giờ gửi — hiện khi di chuột vào tin */}
+                        <span className="opacity-0 group-hover:opacity-100 transition text-[10px] text-gray-400 shrink-0 self-center">
+                          {fmtClock(m.createTime)}
+                        </span>
                       </div>
                     </React.Fragment>
                   );
                 })
+              )}
+              {/* Dấu "Đã xem" (như FB) dưới tin cuối mình gửi */}
+              {showSeen && (
+                <div className="self-end flex items-center gap-1 mt-0.5 mr-1">
+                  <img src={readState[0]?.photo || PLACEHOLDER} alt="" className="w-4 h-4 rounded-full object-cover bg-gray-200" />
+                  <span className="text-[11px] text-gray-400">Đã xem</span>
+                </div>
               )}
               <div ref={endRef} />
             </div>
@@ -398,6 +472,108 @@ export default function DMLayout() {
           </>
         )}
       </main>
+
+      {/* ===== Modal TẠO NHÓM ===== */}
+      <Modal open={groupOpen} onClose={() => setGroupOpen(false)}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold">Tạo nhóm chat</h2>
+          <button onClick={() => setGroupOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-full"><X size={20} /></button>
+        </div>
+        {err && groupOpen && <div className="mb-2 text-sm text-red-600">{err}</div>}
+
+        <input
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          placeholder="Tên nhóm (tùy chọn)"
+          className="w-full mb-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+
+        {/* Người đã chọn */}
+        {groupPicked.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {groupPicked.map((u) => (
+              <span key={u.id} className="flex items-center gap-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs px-2 py-1 rounded-full">
+                {u.username}
+                <button onClick={() => togglePick(u)}><X size={12} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="relative mb-2">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={groupQuery}
+            onChange={(e) => setGroupQuery(e.target.value)}
+            placeholder="Tìm người thêm vào nhóm..."
+            className="w-full pl-10 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-neutral-800 text-sm focus:outline-none"
+          />
+        </div>
+
+        <div className="max-h-56 overflow-y-auto mb-3">
+          {groupResults.map((u) => {
+            const picked = groupPicked.some((x) => x.id === u.id);
+            return (
+              <button key={u.id} onClick={() => togglePick(u)}
+                className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-left">
+                <img src={u.photo || PLACEHOLDER} alt="" className="w-9 h-9 rounded-full object-cover bg-gray-200" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{u.username}</div>
+                  <div className="text-xs text-gray-500 truncate">{displayName(u)}</div>
+                </div>
+                {picked && <Check size={18} className="text-blue-500 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={submitGroup}
+          disabled={groupCreating || groupPicked.length < 2}
+          className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+        >
+          {groupCreating && <Loader2 size={16} className="animate-spin" />} Tạo nhóm ({groupPicked.length})
+        </button>
+      </Modal>
     </div>
+  );
+}
+
+// Ảnh đại diện hội thoại: nhóm (>=2 thành viên) -> ghép 2 avatar chồng nhau kiểu Messenger;
+// còn lại -> 1 avatar. members từ BE (tối đa 4 thành viên khác mình).
+function ConvAvatar({ view, size = 56 }) {
+  const members = (view && view.members) || [];
+  const av = (m) =>
+    (m && m.photo) ||
+    "https://ui-avatars.com/api/?name=" + encodeURIComponent((m && (m.name || m.username)) || "U");
+
+  if (members.length >= 2) {
+    const s2 = Math.round(size * 0.66);
+    return (
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <img
+          src={av(members[0])}
+          alt=""
+          className="absolute top-0 left-0 rounded-full object-cover bg-gray-200 border-2 border-white dark:border-black"
+          style={{ width: s2, height: s2 }}
+        />
+        <img
+          src={av(members[1])}
+          alt=""
+          className="absolute bottom-0 right-0 rounded-full object-cover bg-gray-200 border-2 border-white dark:border-black"
+          style={{ width: s2, height: s2 }}
+        />
+      </div>
+    );
+  }
+
+  const single = (members[0] && av(members[0])) || (view && view.avatar) || PLACEHOLDER;
+  return (
+    <img
+      src={single}
+      alt=""
+      className="rounded-full object-cover bg-gray-200 shrink-0"
+      style={{ width: size, height: size }}
+    />
   );
 }

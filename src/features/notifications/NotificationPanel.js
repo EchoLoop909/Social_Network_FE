@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { fetchNotifs, markAllNotifsRead, markOneRead } from "../../store/notifSlice";
+import { X } from "lucide-react";
+import { fetchNotifs, markAllNotifsRead, markOneRead, deleteOneNotif } from "../../store/notifSlice";
 
 const PLACEHOLDER = "https://via.placeholder.com/80?text=?";
 
@@ -103,7 +104,16 @@ export default function NotificationPanel({ onClose }) {
                   <div className="text-gray-400 text-[12px]">{fmtAgo(n.createTime)}</div>
                 </div>
               </div>
-              {!n.isRead ? <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" /> : null}
+              <div className="flex items-center gap-2 shrink-0">
+                {!n.isRead ? <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> : null}
+                <button
+                  onClick={(e) => { e.stopPropagation(); dispatch(deleteOneNotif(n.id)); }}
+                  title="Xóa thông báo"
+                  className="p-1 rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </li>
           ))}
         </ul>

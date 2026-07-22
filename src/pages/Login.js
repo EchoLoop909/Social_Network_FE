@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { loginApi, saveTokens } from "../services/authApi";
 import { setTokens, setCredentials } from "../store/authSlice";
+import { isAdminToken } from "../utils/auth";
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,8 @@ export default function Login() {
       dispatch(setTokens(tokens));
       if (data.user) dispatch(setCredentials(data.user));
       message.success("Đăng nhập thành công");
-      navigate("/", { replace: true });
+      // RBAC: tài khoản có role ADMIN -> vào trang quản trị; còn lại -> trang chủ.
+      navigate(isAdminToken(tokens.access_token) ? "/admin" : "/", { replace: true });
     } catch (e) {
       message.error(e.message || "Đăng nhập thất bại");
     } finally {

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { fetchNotifList, fetchUnreadCount, markAllRead, markRead } from "../services/notifApi";
+import { fetchNotifList, fetchUnreadCount, markAllRead, markRead, deleteNotif } from "../services/notifApi";
 
 // Tải danh sách thông báo của mình
 export const fetchNotifs = createAsyncThunk("notif/fetch", async () => {
@@ -20,6 +20,12 @@ export const markAllNotifsRead = createAsyncThunk("notif/markAll", async () => {
 // Đánh dấu 1 thông báo đã đọc
 export const markOneRead = createAsyncThunk("notif/markOne", async (id) => {
   await markRead(id);
+  return id;
+});
+
+// Xóa 1 thông báo
+export const deleteOneNotif = createAsyncThunk("notif/deleteOne", async (id) => {
+  await deleteNotif(id);
   return id;
 });
 
@@ -53,6 +59,11 @@ const slice = createSlice({
         n.isRead = true;
         s.unread = Math.max(0, s.unread - 1);
       }
+    });
+    b.addCase(deleteOneNotif.fulfilled, (s, a) => {
+      const n = s.items.find((x) => x.id === a.payload);
+      if (n && !n.isRead) s.unread = Math.max(0, s.unread - 1);
+      s.items = s.items.filter((x) => x.id !== a.payload);
     });
   },
 });

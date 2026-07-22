@@ -17,6 +17,8 @@ import FriendsPage from "./pages/FriendsPage";
 import StoriesPage from "./pages/StoriesPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import AdminPage from "./pages/AdminPage";
+import { isAdminToken } from "./utils/auth";
 
 // Chặn route khi chưa đăng nhập
 function RequireAuth({ children }) {
@@ -30,25 +32,40 @@ function RequireAuth({ children }) {
 export default function App() {
   const tokens = useSelector((s) => s.auth.tokens);
   const isAuthed = !!tokens?.access_token;
+  const admin = isAuthed && isAdminToken(tokens.access_token); // RBAC: có role ADMIN?
 
   return (
     <Routes>
-      {/* Public */}
+      {/* Public — đã đăng nhập thì: ADMIN -> /admin, user thường -> / */}
       <Route
         path="/login"
-        element={isAuthed ? <Navigate to="/" replace /> : <Login />}
+        element={isAuthed ? <Navigate to={admin ? "/admin" : "/"} replace /> : <Login />}
       />
       <Route
         path="/register"
-        element={isAuthed ? <Navigate to="/" replace /> : <Register />}
+        element={isAuthed ? <Navigate to={admin ? "/admin" : "/"} replace /> : <Register />}
       />
 
-      {/* Protected */}
+      {/* Trang quản trị — CHỈ cho role ADMIN. Chưa đăng nhập -> /login; không phải admin -> / */}
+      <Route
+        path="/admin"
+        element={
+          !isAuthed ? (
+            <Navigate to="/login" replace />
+          ) : admin ? (
+            <AdminPage />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
+      />
+
+      {/* Protected (user UI). ADMIN không dùng giao diện user -> đá sang /admin */}
       <Route
         path="/"
         element={
           <RequireAuth>
-            <MainLayout />
+            {admin ? <Navigate to="/admin" replace /> : <MainLayout />}
           </RequireAuth>
         }
       >

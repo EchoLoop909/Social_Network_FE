@@ -32,6 +32,23 @@ export async function getHistory(conversationId, pageIdx = 1, pageSize = 50) {
   return Array.isArray(env?.Object) ? env.Object : [];
 }
 
+/** Đánh dấu đã đọc hội thoại (tới tin mới nhất). */
+export async function markRead(conversationId) {
+  try {
+    await instance.post("/message/read", null, { params: { conversationId } });
+  } catch { /* bỏ qua lỗi đánh dấu đọc */ }
+}
+
+/** Trạng thái đã đọc của thành viên khác: [{ userId, username, photo, lastReadMessageId }]. */
+export async function getReadState(conversationId) {
+  try {
+    const env = await instance.get("/message/read-state", { params: { conversationId } });
+    return Array.isArray(env?.Object) ? env.Object : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Gửi tin nhắn (BE produce Kafka -> consumer lưu + đẩy WebSocket). Chỉ trả message thông báo. */
 export async function sendMessage({ conversationId, text, photo, messageType = "TEXT" }) {
   try {

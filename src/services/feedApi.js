@@ -83,29 +83,56 @@ function normalizePost(raw) {
 }
 
 // --- HÀM GỌI API ---
+/**
+ * Trang chủ giờ dùng GỢI Ý AI (GET /post/recommend) thay cho danh sách theo thời gian.
+ * recommend trả về 1 danh sách ĐÃ XẾP HẠNG theo độ hợp gu (không phân trang thật) ->
+ * lấy 1 lượt tối đa RECOMMEND_LIMIT bài, không có trang sau (nextCursor = null).
+ * Nếu recommend lỗi -> fallback về danh sách bài thường để trang chủ không trống.
+ */
+const RECOMMEND_LIMIT = 50;
+
 export async function getFeed({ cursor = 0, limit = 20 } = {}) {
-  // SỬA LỖI PHÂN TRANG:
-  // Nếu cursor <= 0 -> gửi 1. Backend sẽ trừ 1 thành 0.
   const pageIdx = (!cursor || cursor <= 0) ? 1 : cursor;
+  // recommend không phân trang -> chỉ trả ở trang đầu, các trang sau rỗng để dừng cuộn.
+  if (pageIdx > 1) return { posts: [], nextCursor: null };
 
   try {
-    const data = await api.getPosts(pageIdx, limit);
-
-    let list = [];
-    // Tìm mảng trong .Object
-    if (data && Array.isArray(data.Object)) {
-      list = data.Object;
-    }
-
-    const normalizedPosts = list.map(normalizePost).filter(Boolean);
-
-    // Tính trang tiếp theo
-    const nextCursor = list.length > 0 ? pageIdx + 1 : null;
-
-    return { posts: normalizedPosts, nextCursor };
-
+    const data = await instance.get("/post/recommend", {
+      params: { limit: RECOMMEND_LIMIT },
+    });
+    const list = data && Array.isArray(data.Object) ? data.Object : [];
+    const posts = list.map(normalizePost).filter(Boolean);
+    return { posts, nextCursor: null };
   } catch (err) {
-    console.error("Lỗi:", err);
+    console.error("Lỗi getFeed (recommend), fallback danh sách thường:", err);
+    // Fallback: dùng API bài viết thường nếu recommend lỗi
+    try {
+      const data = await api.getPosts(1, RECOMMEND_LIMIT);
+      const list = data && Array.isArray(data.Object) ? data.Object : [];
+      const posts = list.map(normalizePost).filter(Boolean);
+      return { posts, nextCursor: null };
+    } catch (e) {
+      throw e;
+    }
+  }
+}
+
+/**
+ * REELS: lấy danh sách bài VIDEO (BE lọc post_type='VIDEO' + quyền xem).
+ * Trả về { posts, nextCursor } giống getFeed để dễ phân trang vô hạn.
+ */
+export async function getReels({ cursor = 1, limit = 10 } = {}) {
+  const pageIdx = (!cursor || cursor <= 0) ? 1 : cursor;
+  try {
+    const data = await instance.get("/post/reels", {
+      params: { pageIdx, pageSize: limit },
+    });
+    const list = data && Array.isArray(data.Object) ? data.Object : [];
+    const posts = list.map(normalizePost).filter(Boolean);
+    const nextCursor = list.length >= limit ? pageIdx + 1 : null; // hết trang -> null
+    return { posts, nextCursor };
+  } catch (err) {
+    console.error("Lỗi getReels:", err);
     throw err;
   }
 }

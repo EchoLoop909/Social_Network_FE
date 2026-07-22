@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import { Grid, Bookmark, User, Camera, Loader2, Lock, X } from "lucide-react";
 import { getUserById, getUserPosts, updateMyProfile } from "../services/profileApi";
 import { getFriends, getSentRequests } from "../services/followershipApi";
@@ -8,7 +9,11 @@ import { on, off } from "../services/eventBus";
 import { getHighlights, deleteStory, setHighlight } from "../services/storyRealApi";
 import { getSavedPosts } from "../services/bookmarkApi";
 import { getTaggedPosts } from "../services/postUserTagApi";
+import { getPostById } from "../services/feedApi";
+import * as likeApi from "../services/likeApi";
+import { setViewingPost, clearViewingPost } from "../store/feedSlice";
 import StoryViewerModal from "../features/stories/StoryViewerModal";
+import PostModal from "../features/feed/PostModal";
 
 const AVATAR_FALLBACK = "https://via.placeholder.com/150?text=?";
 
@@ -39,6 +44,9 @@ const ProfilePage = () => {
   const ctx = useOutletContext() || {};
   const setMyInfo = ctx.setMyInfo;
 
+  const dispatch = useDispatch();
+  const viewingPost = useSelector((s) => s.feed.viewing); // bài đang mở ở modal (nằm trong store để like/comment cập nhật ngay)
+
   const meId = useMemo(() => getMyId(), []);
   const targetId = routeParam && routeParam !== "me" ? routeParam : meId;
   const isSelf = !!meId && targetId === meId;
@@ -59,7 +67,34 @@ const ProfilePage = () => {
   const [err, setErr] = useState("");
   const [modal, setModal] = useState(null); // { title, items } | null
   const [loadingAvatar, setLoadingAvatar] = useState(false);
+  const [postOpen, setPostOpen] = useState(false); // modal chi tiết bài đang mở?
+  const [openingPost, setOpeningPost] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Mở 1 bài viết dạng modal Instagram (ảnh trái, bình luận phải) — thay vì chuyển trang.
+  // Đưa bài vào store (feed.viewing) để nút LIKE và bình luận cập nhật ngay (không cần F5).
+  const openPost = async (id) => {
+    if (!id || openingPost) return;
+    setOpeningPost(true);
+    try {
+      const p = await getPostById(id);
+      if (p) {
+        // Nạp cảm xúc hiện tại của mình để nút Thích hiển thị đúng (đã like hay chưa)
+        try {
+          const r = await likeApi.getMyReaction("POST", id);
+          if (r) p.myReaction = r;
+        } catch { /* ignore */ }
+        dispatch(setViewingPost(p));
+        setPostOpen(true);
+      }
+    } catch { /* ignore */ }
+    finally { setOpeningPost(false); }
+  };
+
+  const closePost = () => {
+    setPostOpen(false);
+    dispatch(clearViewingPost());
+  };
 
   // Modal chỉnh sửa hồ sơ (chỉ chính mình)
   const [editOpen, setEditOpen] = useState(false);
@@ -352,7 +387,7 @@ const ProfilePage = () => {
               return (
                 <button
                   key={p.id}
-                  onClick={() => navigate(`/post/${p.id}`)}
+                  onClick={() => openPost(p.id)}
                   className="relative aspect-square bg-gray-100 dark:bg-neutral-800 overflow-hidden group"
                 >
                   {img ? (
@@ -467,6 +502,20 @@ const ProfilePage = () => {
           </div>
         </div>
       )}
+
+      {/* ===== Modal chi tiết bài viết (kiểu Instagram: ảnh trái, bình luận phải) ===== */}
+      <PostModal
+        post={viewingPost}
+        open={postOpen && !!viewingPost}
+        onClose={closePost}
+        currentUserId={meId}
+        onDeleted={(id) => {
+          setPosts((prev) => prev.filter((p) => p.id !== id));
+          setSavedPosts((prev) => prev.filter((p) => p.id !== id));
+          setTaggedPosts((prev) => prev.filter((p) => p.id !== id));
+          setPostCount((c) => Math.max(0, c - 1));
+        }}
+      />
     </div>
   );
 };

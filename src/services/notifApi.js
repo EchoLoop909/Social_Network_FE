@@ -24,3 +24,8 @@ export async function markRead(id) {
 export async function markAllRead() {
   await instance.post("/notification/read-all");
 }
+
+/** Xóa 1 thông báo. */
+export async function deleteNotif(id) {
+  await instance.post("/notification/delete", null, { params: { id } });
+}

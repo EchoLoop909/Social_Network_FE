@@ -37,9 +37,23 @@ export async function updatePost({ id, text, photo, isPinned, visibility }) {
   return instance.post("/post/update", { id, text, photo, isPinned, visibility });
 }
 
-/** Xoá bài viết theo id. */
+/** Xoá bài viết theo id. BE dùng @DeleteMapping nên gửi HTTP DELETE kèm body { id }. */
 export async function deletePost(id) {
-  return instance.post("/post/delete", { id });
+  return instance.delete("/post/delete", { data: { id } });
+}
+
+/**
+ * Gửi tiến độ xem video (watch-time) -> BE nuôi tín hiệu cho gợi ý feed.
+ * Gọi khi lướt qua video khác / pause / xem xong. Im lặng nếu lỗi (không chặn UX).
+ * Dùng instance (có token) thay vì sendBeacon vì endpoint cần xác thực.
+ */
+export async function recordVideoView({ postId, watchedSeconds, duration }) {
+  try {
+    if (!postId) return;
+    await instance.post("/post/video-view", { postId, watchedSeconds, duration });
+  } catch (e) {
+    /* bỏ qua lỗi ghi lượt xem */
+  }
 }
 
 /**

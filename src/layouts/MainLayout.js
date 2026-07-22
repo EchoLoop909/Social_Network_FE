@@ -133,7 +133,7 @@ export default function MainLayout({ keycloak }) {
         <SideItem to="/friends" icon={Users} label="Bạn bè" collapsed={collapsed} />
         <SideItem onClick={() => { setOpenNotif(!openNotif); setOpenSearch(false); }} icon={Heart} label="Thông báo" badge={unreadNotif > 0} collapsed={collapsed} />
         <SideItem onClick={() => setOpenCreate(true)} icon={PlusSquare} label="Tạo" collapsed={collapsed} />
-        
+
         {/* TRANG CÁ NHÂN VỚI ẢNH THẬT */}
         <SideItem 
           to="/u/me" 
