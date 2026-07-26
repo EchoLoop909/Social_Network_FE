@@ -7,7 +7,9 @@ import {
 } from "../../services/storyRealApi";
 import { getFriends } from "../../services/followershipApi";
 
-const PLACEHOLDER = "https://via.placeholder.com/64?text=?";
+// Avatar: có ảnh -> dùng ảnh; chưa có -> avatar chữ viết tắt theo tên/username (vd "Hiệp Hoàng" -> "HH").
+const avatarSrc = (u) =>
+  u?.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(u?.name || u?.username || "User")}`;
 const EMOJIS = ["😍", "😂", "🔥", "❤️", "👍", "🎉", "😎", "🥳", "✨", "😢", "😮", "💯"];
 let STICKER_SEQ = 1;
 
@@ -151,7 +153,7 @@ export default function StoryBar({ meId, me }) {
     } catch (e) { setErr(e?.message || "Đăng story thất bại"); } finally { setSubmitting(false); }
   }
 
-  const myAvatar = me?.photo || myStories[0]?.user?.photo || PLACEHOLDER;
+  const myAvatar = me?.photo || myStories[0]?.user?.photo || avatarSrc(me);
 
   return (
     <div className="border-b border-gray-200 dark:border-neutral-800 mb-4">
@@ -183,7 +185,7 @@ export default function StoryBar({ meId, me }) {
             return (
               <button key={user.id} onClick={() => openByUser(user.id)} className="flex flex-col items-center shrink-0 w-[70px]" title={`Xem tin của ${displayName(user)}`}>
                 <div className={`w-16 h-16 rounded-full p-[2px] ${allSeen ? "bg-gray-300 dark:bg-neutral-600" : "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600"}`}>
-                  <img src={user.photo || PLACEHOLDER} alt="" className="w-full h-full rounded-full object-cover border-2 border-white dark:border-black bg-gray-200" />
+                  <img src={avatarSrc(user)} alt="" className="w-full h-full rounded-full object-cover border-2 border-white dark:border-black bg-gray-200" />
                 </div>
                 <span className="text-xs mt-1 truncate w-16 text-center">{user.username || displayName(user)}</span>
               </button>

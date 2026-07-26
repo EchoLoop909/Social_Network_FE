@@ -84,17 +84,15 @@ function normalizePost(raw) {
 
 // --- HÀM GỌI API ---
 /**
- * Trang chủ giờ dùng GỢI Ý AI (GET /post/recommend) thay cho danh sách theo thời gian.
- * recommend trả về 1 danh sách ĐÃ XẾP HẠNG theo độ hợp gu (không phân trang thật) ->
- * lấy 1 lượt tối đa RECOMMEND_LIMIT bài, không có trang sau (nextCursor = null).
+ * Trang chủ dùng GỢI Ý AI (GET /post/recommend). BE tự nhớ (bảng post_impressions) những
+ * bài đã gợi ý cho user trong 24h gần nhất và loại chúng khỏi lần gợi ý sau -> gọi lại API
+ * này khi cuộn hết trang sẽ tự nhiên ra bài KHÁC, không lặp lại y hệt lô cũ.
  * Nếu recommend lỗi -> fallback về danh sách bài thường để trang chủ không trống.
  */
 const RECOMMEND_LIMIT = 50;
 
 export async function getFeed({ cursor = 0, limit = 20 } = {}) {
   const pageIdx = (!cursor || cursor <= 0) ? 1 : cursor;
-  // recommend không phân trang -> chỉ trả ở trang đầu, các trang sau rỗng để dừng cuộn.
-  if (pageIdx > 1) return { posts: [], nextCursor: null };
 
   try {
     const data = await instance.get("/post/recommend", {
@@ -102,15 +100,18 @@ export async function getFeed({ cursor = 0, limit = 20 } = {}) {
     });
     const list = data && Array.isArray(data.Object) ? data.Object : [];
     const posts = list.map(normalizePost).filter(Boolean);
-    return { posts, nextCursor: null };
+    // Còn bài (BE loại bớt bài đã gợi ý gần đây rồi mà vẫn đủ limit) -> có thể còn trang sau.
+    const nextCursor = posts.length >= RECOMMEND_LIMIT ? pageIdx + 1 : null;
+    return { posts, nextCursor };
   } catch (err) {
     console.error("Lỗi getFeed (recommend), fallback danh sách thường:", err);
-    // Fallback: dùng API bài viết thường nếu recommend lỗi
+    // Fallback: dùng API bài viết thường (có phân trang thật) nếu recommend lỗi
     try {
-      const data = await api.getPosts(1, RECOMMEND_LIMIT);
+      const data = await api.getPosts(pageIdx, RECOMMEND_LIMIT);
       const list = data && Array.isArray(data.Object) ? data.Object : [];
       const posts = list.map(normalizePost).filter(Boolean);
-      return { posts, nextCursor: null };
+      const nextCursor = posts.length >= RECOMMEND_LIMIT ? pageIdx + 1 : null;
+      return { posts, nextCursor };
     } catch (e) {
       throw e;
     }
@@ -135,6 +136,34 @@ export async function getReels({ cursor = 1, limit = 10 } = {}) {
     console.error("Lỗi getReels:", err);
     throw err;
   }
+}
+
+/**
+ * Báo cho BE các bài THỰC SỰ đã lướt thấy trên màn hình (gộp theo lô từ seenTracker) ->
+ * BE ghi nhận, loại khỏi ứng viên /post/recommend trong 24h tới. Lỗi thì bỏ qua im lặng
+ * (chỉ là tín hiệu phụ, không ảnh hưởng trải nghiệm chính nếu gọi thất bại).
+ */
+export async function markPostsSeen(postIds) {
+  if (!Array.isArray(postIds) || postIds.length === 0) return;
+  try {
+    await instance.post("/post/mark-seen", { postIds });
+  } catch (err) {
+    console.error("Lỗi markPostsSeen:", err);
+  }
+}
+
+/**
+ * Danh sách bài viết theo hashtag (dùng cho trang /hashtag/:name). name không cần dấu #.
+ */
+export async function getPostsByHashtag(name, { cursor = 1, limit = 20 } = {}) {
+  const pageIdx = (!cursor || cursor <= 0) ? 1 : cursor;
+  const data = await instance.get("/post/by-hashtag", {
+    params: { name, pageIdx, pageSize: limit },
+  });
+  const list = data && Array.isArray(data.Object) ? data.Object : [];
+  const posts = list.map(normalizePost).filter(Boolean);
+  const nextCursor = list.length >= limit ? pageIdx + 1 : null;
+  return { posts, nextCursor };
 }
 
 /**

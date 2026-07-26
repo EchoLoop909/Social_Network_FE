@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, X, ShieldAlert } from "lucide-react";
+import { X, ShieldAlert, EyeOff, Lock, RotateCcw } from "lucide-react";
 import {
   getAdminReports,
-  resolveReport,
+  resolvePostReport,
+  resolveUserReport,
   rejectReport,
+  restorePost,
 } from "../../services/adminApi";
 import { REPORT_STATUS } from "../../services/data/adminSeed";
 import { StatusPill, REPORT_STATUS_META, fmtDateTime, shortId } from "./adminUi";
@@ -118,21 +120,52 @@ export default function AdminReportQueue({ compact = false, onChanged }) {
                   <div className="text-gray-400">{fmtDateTime(r.createTime)}</div>
                 </div>
 
+                {/* Xem chi tiết nội dung bị gắn cờ để đối chiếu — theo đúng yêu cầu tài liệu */}
+                {r.targetType === "POST" && r.targetPost && !compact && (
+                  <div className="mt-2 rounded-lg bg-gray-50 dark:bg-neutral-800 border border-gray-100 dark:border-neutral-700 p-2.5 text-sm text-gray-700 dark:text-neutral-300">
+                    "{r.targetPost.text}"
+                  </div>
+                )}
+
                 {isPending && (
-                  <div className="mt-2.5 flex items-center gap-2">
-                    <button
-                      disabled={busyId === r.id}
-                      onClick={() => act(resolveReport, r.id)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                    >
-                      <Check size={14} /> Duyệt (RESOLVED)
-                    </button>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
                     <button
                       disabled={busyId === r.id}
                       onClick={() => act(rejectReport, r.id)}
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs border border-gray-200 dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800"
                     >
-                      <X size={14} /> Từ chối (REJECTED)
+                      <X size={14} /> Bác bỏ
+                    </button>
+                    {r.targetType === "POST" && (
+                      <button
+                        disabled={busyId === r.id}
+                        onClick={() => act(resolvePostReport, r.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
+                      >
+                        <EyeOff size={14} /> Xử lý nội dung (Ẩn bài)
+                      </button>
+                    )}
+                    {r.targetType === "USER" && (
+                      <button
+                        disabled={busyId === r.id}
+                        onClick={() => act(resolveUserReport, r.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        <Lock size={14} /> Xử lý tài khoản (Khóa)
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Báo cáo đã xử lý (bài bị gắn cờ) -> cho phép khôi phục nếu xét lại thấy oan */}
+                {r.status === REPORT_STATUS.RESOLVED && r.targetType === "POST" && (
+                  <div className="mt-2.5">
+                    <button
+                      disabled={busyId === r.id}
+                      onClick={() => act(() => restorePost(r.targetId), r.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs border border-gray-200 dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50"
+                    >
+                      <RotateCcw size={14} /> Khôi phục bài viết
                     </button>
                   </div>
                 )}

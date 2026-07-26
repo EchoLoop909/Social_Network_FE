@@ -1,14 +1,17 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { getFeed } from "../services/feedApi";
+import { getFeed, getPostById } from "../services/feedApi";
 import * as likeApi from "../services/likeApi";
 import * as postApi from "../services/postApi";
 
-// Áp 1 thao tác lên bài trong feed (items) VÀ bài đang xem chi tiết (viewing) nếu trùng id.
-// Nhờ vậy like/comment ở trang /post/:id (PostDetailPage) cũng cập nhật ngay, không cần F5.
+// Áp 1 thao tác lên bài trong feed (items), bài đang xem chi tiết (viewing) VÀ danh sách
+// đang xem theo hashtag (hashtagPosts) nếu trùng id. Nhờ vậy like/comment ở trang /post/:id
+// (PostDetailPage) lẫn /hashtag/:name (HashtagPage) cũng cập nhật ngay, không cần F5.
 function eachTarget(state, id, fn) {
   const p = state.items.find((x) => x.id === id);
   if (p) fn(p);
   if (state.viewing && state.viewing.id === id) fn(state.viewing);
+  const h = state.hashtagPosts.find((x) => x.id === id);
+  if (h) fn(h);
 }
 
 // --- 1. THUNK LẤY FEED (API thật) ---
@@ -69,7 +72,12 @@ export const createPostThunk = createAsyncThunk(
   async (dto, { dispatch, rejectWithValue }) => {
     try {
       const newId = await postApi.createPost(dto);
-      dispatch(fetchFeed(0));
+      // Chèn thẳng bài vừa tạo lên đầu feed NGAY, không đợi /post/recommend xếp hạng lại
+      // (bài mới chưa có embedding nên có thể rớt khỏi top gợi ý cho tới khi xử lý nền xong).
+      try {
+        const newPost = await getPostById(newId);
+        if (newPost) dispatch(prependPost(newPost));
+      } catch { /* ignore */ }
       return newId; // trả id bài mới để FE gắn thẻ sau khi đăng
     } catch (err) {
       return rejectWithValue(err.message);
@@ -120,6 +128,7 @@ const feedSlice = createSlice({
   initialState: {
     items: [],
     viewing: null, // bài đang mở ở trang chi tiết (/post/:id)
+    hashtagPosts: [], // danh sách đang xem ở trang theo hashtag (/hashtag/:name)
     savedIds: [], // id các bài mình đã lưu (bookmark)
     nextCursor: 0,
     status: "idle",
@@ -142,6 +151,20 @@ const feedSlice = createSlice({
     },
     clearViewingPost(state) {
       state.viewing = null;
+    },
+    // Chèn 1 bài lên đầu feed ngay lập tức (dùng khi vừa đăng bài xong)
+    prependPost(state, action) {
+      state.items = [action.payload, ...state.items.filter((p) => p.id !== action.payload.id)];
+    },
+    // Danh sách bài theo hashtag (trang /hashtag/:name)
+    setHashtagPosts(state, action) {
+      state.hashtagPosts = Array.isArray(action.payload) ? action.payload : [];
+    },
+    appendHashtagPosts(state, action) {
+      state.hashtagPosts = [...state.hashtagPosts, ...(Array.isArray(action.payload) ? action.payload : [])];
+    },
+    clearHashtagPosts(state) {
+      state.hashtagPosts = [];
     },
     // Đặt cảm xúc hiện tại của user (nạp từ /like/my-reaction), KHÔNG đổi số đếm
     setMyReaction(state, action) {
@@ -208,6 +231,7 @@ const feedSlice = createSlice({
       })
       .addCase(deletePostThunk.fulfilled, (state, action) => {
         state.items = state.items.filter((p) => p.id !== action.payload);
+        state.hashtagPosts = state.hashtagPosts.filter((p) => p.id !== action.payload);
         if (state.viewing && state.viewing.id === action.payload) state.viewing = null;
       });
   },
@@ -215,6 +239,6 @@ const feedSlice = createSlice({
 
 export const {
   setViewingPost, clearViewingPost, setMyReaction, incCommentCount, setCommentCount, toggleSaveLocal,
-  setSavedIds, setSaved,
+  setSavedIds, setSaved, prependPost, setHashtagPosts, appendHashtagPosts, clearHashtagPosts,
 } = feedSlice.actions;
 export default feedSlice.reducer;

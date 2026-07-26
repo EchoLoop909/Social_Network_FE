@@ -3,7 +3,9 @@
 
 export function decodeToken(accessToken) {
   try {
-    return JSON.parse(atob(accessToken.split(".")[1]));
+    // JWT payload là base64URL: đổi '-'/'_' về '+'/'/' trước khi atob (token Keycloak/Google có các ký tự này).
+    const b64 = accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64));
   } catch {
     return null;
   }

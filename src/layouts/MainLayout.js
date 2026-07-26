@@ -11,13 +11,14 @@ import axios from 'axios';
 import { emit } from "../services/eventBus";
 import { connectChat } from "../services/chatSocket";
 import { fetchUnread, pushNew } from "../store/notifSlice";
-import SuggestList from "../features/suggest/SuggestList";
 import CreatePostDialog from "../features/create/CreatePostDialog";
 import Drawer from "../components/Drawer";
 import SearchPanel from "../features/search/SearchPanel";
 import NotificationPanel from "../features/notifications/NotificationPanel";
 import { BE_URL } from "../config";
-import { getStoredTokens } from "../services/authApi";
+import { getStoredTokens, clearTokens, setAccountLockedMessage } from "../services/authApi";
+import { logout } from "../store/authSlice";
+import keycloak from "../services/keycloak";
 
 function SideItem({ to, onClick, icon: Icon, label, end, badge, collapsed, customIcon }) {
   const base = "flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-800 dark:text-neutral-200 transition-all duration-200";
@@ -56,7 +57,8 @@ export default function MainLayout({ keycloak }) {
     try {
       const t = getStoredTokens();
       if (!t?.access_token) return null;
-      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+      const b64 = t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(atob(b64))?.sub || null;
     } catch { return null; }
   }, []);
   const notifClientRef = useRef(null);
@@ -106,6 +108,14 @@ export default function MainLayout({ keycloak }) {
         const n = JSON.parse(frame.body);
         // Tín hiệu đồng bộ im lặng (vd bị hủy kết bạn): chỉ refresh, KHÔNG thêm vào chuông.
         if (n?.type === "FRIENDSHIP_SYNC") { emit("friendship:changed", n); return; }
+        // Admin vừa khóa tài khoản này -> đá ra ngay lập tức, kèm thông báo hiện ở /login.
+        if (n?.type === "ACCOUNT_SUSPENDED") {
+          setAccountLockedMessage(n.message);
+          clearTokens();
+          dispatch(logout());
+          keycloak.logout({ redirectUri: window.location.origin + "/login", logoutMethod: "POST" });
+          return;
+        }
         dispatch(pushNew(n));
         // Noti liên quan kết bạn -> báo các màn hình (Profile, Friends) tự nạp lại, khỏi F5.
         if (n?.type === "FOLLOW" || n?.type === "FOLLOW_REQUEST") emit("friendship:changed", n);
@@ -123,7 +133,7 @@ export default function MainLayout({ keycloak }) {
                   <svg aria-label="Instagram" fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"></path></svg>
                </div>
            ) : (
-               <h1 className="hidden xl:block text-2xl font-bold font-serif italic tracking-wider cursor-pointer mt-2" onClick={() => window.location.href='/'}>Instagram</h1>
+               <h1 className="hidden xl:block text-1.75xl font-bold font-serif italic tracking-wider cursor-pointer mt-2" onClick={() => window.location.href='/'}>Social Network</h1>
            )}
         </div>
 
@@ -140,18 +150,25 @@ export default function MainLayout({ keycloak }) {
           label="Trang cá nhân" 
           collapsed={collapsed} 
           customIcon={
-            <div className={`w-6 h-6 rounded-full border overflow-hidden ${myInfo?.photo ? 'border-black dark:border-white' : 'border-gray-300'}`}>
-              <img src={myInfo?.photo || "https://via.placeholder.com/24"} className="w-full h-full object-cover" alt="avatar" />
-            </div>
+            (() => {
+              // Avatar của chính user: có ảnh -> dùng ảnh; chưa có -> avatar chữ viết tắt theo tên/username
+              const myName = (myInfo?.name && myInfo.name.trim()) || myInfo?.username || "U";
+              const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(myName)}`;
+              return (
+                <div className="w-6 h-6 rounded-full border border-black dark:border-white overflow-hidden">
+                  <img
+                    src={myInfo?.photo || fallback}
+                    className="w-full h-full object-cover"
+                    alt="avatar"
+                    onError={(e) => { e.target.src = fallback; }}
+                  />
+                </div>
+              );
+            })()
           }
         />
 
-        <div className="mt-auto flex flex-col gap-1">
-          <ThemeSwitch onToggle={() => dispatch(toggleTheme())} />
-          <div className={`flex items-center gap-3 px-3 py-3 mt-1 rounded-lg hover:bg-gray-100 cursor-pointer ${collapsed ? "justify-center" : ""}`}>
-            <ChevronDown size={24} /><span className={collapsed ? "hidden" : "hidden xl:inline"}>Xem thêm</span>
-          </div>
-        </div>
+       
       </aside>
 
       <div className={`transition-all duration-300 ${collapsed ? "ml-[72px]" : "ml-[72px] xl:ml-[245px]"}`}>

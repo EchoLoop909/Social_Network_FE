@@ -1,68 +1,93 @@
 // ============================================================================
-// ADMIN API (MOCK) — theo pattern services/apiMock.js hiện có của repo.
+// ADMIN API — theo pattern services/apiMock.js hiện có của repo.
 //
-// ⚠️ BE HIỆN CHƯA CÓ ADMIN ENDPOINT:
-//   - Không có AuthController/AdminController cho việc khóa/mở khóa tài khoản
-//     (docs/note.md ghi rõ "ACTIVE -> SUSPENDED: Admin (luồng riêng, CHƯA code)").
-//   - Report/ReportReason chưa có controller.
-// Vì vậy toàn bộ hàm dưới đây thao tác trên fixture in-memory (adminSeed.js).
+// ⚠️ ĐÃ NỐI BE THẬT:
+//   - getAdminStats()                             -> GET /auth/admin-stats + GET /report/list
+//   - getAdminUsers()                              -> GET /auth/getuser (danh sách user thật)
+//   - getAdminReports/rejectReport/resolvePostReport -> ReportController (prefix /report)
+// Khóa/mở khóa tài khoản (suspendUser/activateUser) đã nối /auth/toggle-status thật.
+// resolveUserReport ("xử lý tài khoản" khi report nhắm vào USER) VẪN MOCK vì chưa có
+// luồng nào tạo report kiểu USER cả (chỉ mới có report POST) — dùng fixture adminSeed.js.
 // Khi BE bổ sung endpoint, chỉ cần thay thân hàm bằng gọi `instance` (services/api.js)
 // giữ nguyên chữ ký -> UI không phải sửa.
-//
-// Mọi chức năng ở đây đều BÁM SÁT DB: chỉ dùng đúng các field/enum của
-// User, Report, ReportReason. Không có Risk Level, DAU, Audit Log... (không tồn tại trong DB).
 // ============================================================================
 
+import { instance } from "./api";
 import { mockApiCall } from "./apiMock";
 import {
   adminUsers,
   adminReports,
-  adminReportReasons,
   USER_STATUS,
   REPORT_STATUS,
+  REPORT_TARGET_TYPE,
 } from "./data/adminSeed";
 
-// Bản sao in-memory để mô phỏng ghi dữ liệu (không đụng seed gốc khi import nơi khác)
+// Bản sao in-memory để mô phỏng ghi dữ liệu — CHỈ dùng cho resolveUserReport (mock, chưa
+// có endpoint BE thật cho "xử lý tài khoản"), tách biệt hoàn toàn với danh sách user thật
+// ở bảng "Quản lý người dùng" bên dưới. getAdminReports/rejectReport/resolvePostReport
+// đã nối BE thật (ReportController) nên không cần fixture report/post nữa.
 let usersDb = adminUsers.map((u) => ({ ...u }));
 let reportsDb = adminReports.map((r) => ({ ...r }));
 
 const findUser = (id) => usersDb.find((u) => u.id === id) || null;
-const findReason = (id) =>
-  adminReportReasons.find((r) => r.id === id) || null;
+
+// ─── Cache danh sách user THẬT (bảng "Quản lý người dùng") ──────────────────
+// Nạp 1 lần từ GET /auth/getuser (pageSize=100), giữ trong RAM để lọc/sắp xếp/
+// phân trang phía FE (API hiện không hỗ trợ filter theo status). Khóa/mở khóa
+// chỉ sửa TRẠNG THÁI TRONG CACHE NÀY (chưa có API thật để ghi xuống DB).
+let realUsersCache = null;
+let realUsersLoading = null;
+
+function loadRealUsers() {
+  if (realUsersCache) return Promise.resolve(realUsersCache);
+  if (!realUsersLoading) {
+    realUsersLoading = instance
+      .get("/auth/getuser", { params: { pageIdx: 1, pageSize: 100 } })
+      .then((res) => {
+        realUsersCache = Array.isArray(res?.Object) ? res.Object : [];
+        return realUsersCache;
+      })
+      .finally(() => {
+        realUsersLoading = null;
+      });
+  }
+  return realUsersLoading;
+}
+
+const findRealUser = (id) =>
+  (realUsersCache || []).find((u) => u.id === id) || null;
 
 // ─── THỐNG KÊ (chỉ các số ĐẾM ĐƯỢC TỪ DB) ──────────────────────────────────
 // Không trả DAU / Recent Bans 24h vì DB không lưu hoạt động đăng nhập hay
 // mốc thời gian đổi trạng thái. UI sẽ tự đánh dấu các ô đó là "Chưa có trong DB".
+// Tổng user / user ACTIVE / user SUSPENDED / tổng bài viết: gọi thẳng BE thật
+// GET /auth/admin-stats — đếm chính xác trong DB (countByStatus + count()), không
+// bị giới hạn bởi pageSize như khi tự đếm từ 1 trang danh sách.
+// pendingReports: ĐÃ NỐI BE THẬT (GET /report/list?status=PENDING, chỉ lấy totalElements).
 export function getAdminStats() {
-  return mockApiCall(() => {
-    const totalUsers = usersDb.length;
-    const activeUsers = usersDb.filter(
-      (u) => u.status === USER_STATUS.ACTIVE
-    ).length;
-    const suspendedUsers = usersDb.filter(
-      (u) => u.status === USER_STATUS.SUSPENDED
-    ).length;
-    const pendingUsers = usersDb.filter(
-      (u) => u.status === USER_STATUS.PENDING_ACTIVATION
-    ).length;
-    const pendingReports = reportsDb.filter(
-      (r) => r.status === REPORT_STATUS.PENDING
-    ).length;
+  return Promise.all([
+    instance.get("/auth/admin-stats"),
+    instance.get("/report/list", { params: { status: "PENDING", pageIdx: 1, pageSize: 1 } }),
+  ]).then(([statsRes, reportsRes]) => {
+    const s = statsRes?.Object || {};
+    const pendingReports = reportsRes?.totalElements ?? 0;
     return {
-      totalUsers,
-      activeUsers,
-      suspendedUsers,
-      pendingUsers,
+      totalUsers: s.totalUsers ?? 0,
+      activeUsers: s.activeUsers ?? 0,
+      suspendedUsers: s.suspendedUsers ?? 0,
+      totalPosts: s.totalPosts ?? 0,
       pendingReports,
     };
   });
 }
 
-// ─── DANH SÁCH USER (lọc + tìm + phân trang) ────────────────────────────────
+// ─── DANH SÁCH USER THẬT — GET /auth/getuser (lọc + tìm + phân trang ở FE) ──
 // params: { status, search, sort, pageIdx (1-based), pageSize }
 //   status: "" | ACTIVE | SUSPENDED | PENDING_ACTIVATION
 //   search: khớp username / name / email / id (UID)
 //   sort:   "newest" | "oldest" (theo creationDate)
+// ⚠️ API /auth/getuser không hỗ trợ filter theo status ở server, nên phải nạp
+// tối đa 100 user (pageSize) rồi lọc/sắp xếp/phân trang thủ công ở đây.
 export function getAdminUsers({
   status = "",
   search = "",
@@ -70,8 +95,8 @@ export function getAdminUsers({
   pageIdx = 1,
   pageSize = 10,
 } = {}) {
-  return mockApiCall(() => {
-    let list = usersDb.slice();
+  return loadRealUsers().then((users) => {
+    let list = users.slice();
 
     if (status) list = list.filter((u) => u.status === status);
 
@@ -101,65 +126,86 @@ export function getAdminUsers({
   });
 }
 
-// ─── KHÓA TÀI KHOẢN: ACTIVE -> SUSPENDED ────────────────────────────────────
+// ─── CHI TIẾT 1 USER — GET /auth/getuser?userId=... (trang "Chi tiết người dùng") ─
+export function getAdminUserById(userId) {
+  return instance
+    .get("/auth/getuser", { params: { userId, pageIdx: 1, pageSize: 1 } })
+    .then((res) => {
+      const list = Array.isArray(res?.Object) ? res.Object : [];
+      return list.find((u) => u.id === userId) || list[0] || null;
+    });
+}
+
+// ─── BÀI VIẾT CỦA 1 USER — GET /post/GetlistPost?userId=...&pageSize=100 ────
+export function getAdminUserPosts(userId) {
+  return instance
+    .get("/post/GetlistPost", { params: { userId, pageIdx: 1, pageSize: 100 } })
+    .then((res) => ({
+      items: Array.isArray(res?.Object) ? res.Object : [],
+      totalElements: res?.totalElements ?? 0,
+    }));
+}
+
+// ─── KHÓA / MỞ KHÓA TÀI KHOẢN: PUT /auth/toggle-status (chỉ ADMIN, BE tự đảo
+// ACTIVE <-> SUSPENDED). Sau khi BE xác nhận, cập nhật lại đúng user trong cache
+// để bảng hiển thị ngay mà không cần gọi lại /auth/getuser.
+function toggleStatus(userId, expectedNewStatus) {
+  return instance.put("/auth/toggle-status", null, { params: { userId } }).then(() => {
+    const u = findRealUser(userId);
+    if (u) u.status = expectedNewStatus;
+    return { id: userId, status: expectedNewStatus };
+  });
+}
+
 // Bám docs/note.md phần D: chuyển trạng thái do Admin thực hiện.
 export function suspendUser(userId) {
-  return mockApiCall(() => {
-    const u = findUser(userId);
-    if (!u) throw new Error("Không tìm thấy user");
-    u.status = USER_STATUS.SUSPENDED;
-    return { id: u.id, status: u.status };
-  });
+  return toggleStatus(userId, USER_STATUS.SUSPENDED);
 }
 
-// ─── MỞ KHÓA: SUSPENDED -> ACTIVE ───────────────────────────────────────────
 export function activateUser(userId) {
-  return mockApiCall(() => {
-    const u = findUser(userId);
-    if (!u) throw new Error("Không tìm thấy user");
-    u.status = USER_STATUS.ACTIVE;
-    return { id: u.id, status: u.status };
-  });
+  return toggleStatus(userId, USER_STATUS.ACTIVE);
 }
 
-// ─── HÀNG ĐỢI BÁO CÁO (Report) ──────────────────────────────────────────────
+// ─── HÀNG ĐỢI BÁO CÁO (Report) — ĐÃ NỐI BE THẬT (ReportController, prefix /report) ──
 // params: { status } — "" | PENDING | RESOLVED | REJECTED
-// Trả kèm reporter (User) + reason (ReportReason) đã resolve để UI hiển thị.
 export function getAdminReports({ status = "" } = {}) {
-  return mockApiCall(() => {
-    let list = reportsDb.slice();
-    if (status) list = list.filter((r) => r.status === status);
-    list.sort(
-      (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
-    );
-    const enriched = list.map((r) => ({
-      ...r,
-      reporter: findUser(r.reporterId),
-      reportReason: findReason(r.reportReasonId),
-      // Nếu báo cáo nhắm vào USER thì kèm thông tin user bị báo cáo
-      targetUser:
-        r.targetType === "USER" ? findUser(r.targetId) : null,
+  return instance
+    .get("/report/list", { params: { status: status || undefined, pageIdx: 1, pageSize: 100 } })
+    .then((res) => ({
+      content: Array.isArray(res?.Object) ? res.Object : [],
+      totalElements: res?.totalElements ?? 0,
     }));
-    return { content: enriched, totalElements: enriched.length };
-  });
 }
 
-// ─── DUYỆT BÁO CÁO: PENDING -> RESOLVED ─────────────────────────────────────
-export function resolveReport(reportId) {
-  return mockApiCall(() => {
-    const r = reportsDb.find((x) => x.id === reportId);
-    if (!r) throw new Error("Không tìm thấy báo cáo");
-    r.status = REPORT_STATUS.RESOLVED;
-    return { id: r.id, status: r.status };
-  });
-}
-
-// ─── TỪ CHỐI BÁO CÁO: PENDING -> REJECTED ───────────────────────────────────
+// ─── TỪ CHỐI BÁO CÁO ("Bác bỏ"): PENDING -> REJECTED ─────────────────────────
+// Không đụng gì tới bài viết/tài khoản — chỉ đóng report vì xét thấy không vi phạm.
 export function rejectReport(reportId) {
+  return instance.put("/report/reject", { id: reportId });
+}
+
+// ─── "Xử lý nội dung": GẮN CỜ bài viết vi phạm (ẩn khỏi mọi nơi) + PENDING -> RESOLVED ──
+// Chỉ áp dụng khi report nhắm vào POST (đúng luồng UseCase kiểm duyệt trong tài liệu).
+export function resolvePostReport(reportId) {
+  return instance.put("/report/resolve-post", { id: reportId });
+}
+
+// ─── Khôi phục bài viết đã bị gắn cờ (FLAGGED -> PUBLISHED) ─────────────────
+export function restorePost(postId) {
+  return instance.put("/post/restore", { id: postId });
+}
+
+// ─── "Xử lý tài khoản": khóa tài khoản vi phạm (status -> SUSPENDED) + đóng report ─
+// Chỉ áp dụng khi report nhắm vào USER.
+export function resolveUserReport(reportId) {
   return mockApiCall(() => {
     const r = reportsDb.find((x) => x.id === reportId);
     if (!r) throw new Error("Không tìm thấy báo cáo");
-    r.status = REPORT_STATUS.REJECTED;
-    return { id: r.id, status: r.status };
+    if (r.targetType !== REPORT_TARGET_TYPE.USER) {
+      throw new Error("Báo cáo này không nhắm vào tài khoản");
+    }
+    const u = findUser(r.targetId);
+    if (u) u.status = USER_STATUS.SUSPENDED;
+    r.status = REPORT_STATUS.RESOLVED;
+    return { id: r.id, status: r.status, user: u ? { id: u.id, status: u.status } : null };
   });
 }

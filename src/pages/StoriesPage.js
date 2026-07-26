@@ -57,7 +57,7 @@ export default function StoriesPage() {
     try {
       const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
       if (!t?.access_token) return null;
-      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+      return JSON.parse(atob(t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.sub || null;
     } catch { return null; }
   }, []);
 

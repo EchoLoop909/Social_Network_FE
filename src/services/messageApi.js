@@ -36,7 +36,11 @@ export async function getHistory(conversationId, pageIdx = 1, pageSize = 50) {
 export async function markRead(conversationId) {
   try {
     await instance.post("/message/read", null, { params: { conversationId } });
-  } catch { /* bỏ qua lỗi đánh dấu đọc */ }
+  } catch (err) {
+    // Trước đây nuốt lỗi im lặng -> không biết vì sao "đã đọc" không lưu được xuống DB.
+    // Giờ log ra Console để còn thấy lỗi thật (401/403/...) thay vì chỉ tưởng là đã lưu.
+    console.error("markRead thất bại:", extractError(err, "Không rõ lỗi"));
+  }
 }
 
 /** Trạng thái đã đọc của thành viên khác: [{ userId, username, photo, lastReadMessageId }]. */
@@ -49,12 +53,58 @@ export async function getReadState(conversationId) {
   }
 }
 
-/** Gửi tin nhắn (BE produce Kafka -> consumer lưu + đẩy WebSocket). Chỉ trả message thông báo. */
-export async function sendMessage({ conversationId, text, photo, messageType = "TEXT" }) {
+/** Gửi tin nhắn (BE produce Kafka -> consumer lưu + đẩy WebSocket). Chỉ trả message thông báo.
+ *  replyToMessageId: tùy chọn — id tin nhắn đang được trả lời (cùng hội thoại). */
+export async function sendMessage({ conversationId, text, photo, messageType = "TEXT", replyToMessageId }) {
   try {
-    const env = await instance.post("/message/send", { conversationId, text, photo, messageType });
+    const env = await instance.post("/message/send", { conversationId, text, photo, messageType, replyToMessageId });
     return env?.Errors?.message || "SEND OK";
   } catch (err) {
     throw new Error(extractError(err, "Gửi tin thất bại"));
+  }
+}
+
+/** Sửa nội dung 1 tin nhắn — chỉ chủ tin nhắn. */
+export async function editMessage(id, text) {
+  try {
+    await instance.put("/message/update", { id, text });
+  } catch (err) {
+    throw new Error(extractError(err, "Sửa tin nhắn thất bại"));
+  }
+}
+
+/** Xóa CỨNG 1 tin nhắn khỏi DB — chỉ chủ tin nhắn. */
+export async function deleteMessage(id) {
+  try {
+    await instance.delete("/message/delete", { data: { id } });
+  } catch (err) {
+    throw new Error(extractError(err, "Xóa tin nhắn thất bại"));
+  }
+}
+
+/** Rời nhóm (chỉ hội thoại GROUP). */
+export async function leaveGroup(conversationId) {
+  try {
+    await instance.delete("/message/leave-group", { params: { conversationId } });
+  } catch (err) {
+    throw new Error(extractError(err, "Rời nhóm thất bại"));
+  }
+}
+
+/** Thêm thành viên vào nhóm — bất kỳ thành viên nào cũng thêm được (không chỉ trưởng nhóm). */
+export async function addParticipants(conversationId, userIds) {
+  try {
+    await instance.post("/message/add-participants", { conversationId, userIds });
+  } catch (err) {
+    throw new Error(extractError(err, "Thêm thành viên thất bại"));
+  }
+}
+
+/** Xóa cả nhóm — CHỈ trưởng nhóm (người tạo). Xóa cứng hết tin nhắn trong nhóm. */
+export async function deleteGroup(conversationId) {
+  try {
+    await instance.delete("/message/delete-group", { params: { conversationId } });
+  } catch (err) {
+    throw new Error(extractError(err, "Xóa nhóm thất bại"));
   }
 }

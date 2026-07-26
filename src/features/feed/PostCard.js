@@ -16,12 +16,14 @@ import * as likeApi from "../../services/likeApi";
 import { toggleBookmark } from "../../services/bookmarkApi";
 import { addUserTag } from "../../services/postUserTagApi";
 import TagPeopleDialog from "../create/TagPeopleDialog";
+import ReportPostDialog from "./ReportPostDialog";
 import { sendFriendRequest } from "../../services/followershipApi";
 import { loadRelationship, invalidateRelationship } from "../../services/relationshipCache";
 import { getRootComments } from "../../services/commentApi";
 import { formatNumber } from "../../utils/formatNumber";
 import { timeAgo } from "../../utils/timeAgo";
 import MentionText from "../../utils/MentionText";
+import { markSeen } from "../../utils/seenTracker";
 
 export default function PostCard({ post }) {
   const dispatch = useDispatch();
@@ -31,7 +33,8 @@ export default function PostCard({ post }) {
     try {
       const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
       if (!t?.access_token) return null;
-      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+      const b64 = t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(atob(b64))?.sub || null;
     } catch { return null; }
   }, []);
   const currentUserId = currentUser?.id || meIdFromToken;
@@ -59,6 +62,7 @@ export default function PostCard({ post }) {
   const [openShare, setOpenShare] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openTag, setOpenTag] = useState(false);
+  const [openReport, setOpenReport] = useState(false);
   const [peopleModal, setPeopleModal] = useState(null); // { title, loading, users } | null
   const [reactionsOpen, setReactionsOpen] = useState(false); // modal xem cảm xúc theo loại
   const openSharers = async () => {
@@ -85,6 +89,27 @@ export default function PostCard({ post }) {
   // Bài share đã mất gốc thì BE chặn share tiếp -> ẩn/khoá nút share ở FE cho khớp
   const shareDisabled = post.isShared && post.originalLost;
   const hydrated = useRef(false);
+
+  // Báo "đã lướt thấy" cho gợi ý AI — chỉ khi bài THỰC SỰ lọt vào khung nhìn (không phải
+  // chỉ vì có trong response API), gộp theo lô ở seenTracker để tránh gọi API dồn dập.
+  const cardRef = useRef(null);
+  const seenReported = useRef(false);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !seenReported.current) {
+          seenReported.current = true;
+          markSeen(post.id);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [post.id]);
 
   const author = post.author || { username: "Người dùng", name: "", avatar: "" };
   // Avatar mặc định = viết tắt HỌ TÊN người dùng (vd "Hoàng Hiệp" -> "HH"); nếu có ảnh thì dùng ảnh.
@@ -155,7 +180,7 @@ export default function PostCard({ post }) {
   };
 
   return (
-    <article className="bg-white dark:bg-black border border-gray-200 dark:border-neutral-800 rounded-lg mb-6">
+    <article ref={cardRef} className="bg-white dark:bg-black border border-gray-200 dark:border-neutral-800 rounded-lg mb-6">
       {/* HEADER */}
       <div className="flex items-center px-3 py-2.5">
         <div className="w-9 h-9 rounded-full p-[2px] bg-gradient-to-tr from-pink-500 via-red-500 to-yellow-400 mr-3 shrink-0">
@@ -196,35 +221,44 @@ export default function PostCard({ post }) {
           </button>
         )}
 
-        {isOwner && (
-          <div className="relative">
-            <button onClick={() => setMenuOpen((v) => !v)} className="text-gray-600 dark:text-gray-300 hover:opacity-60">
-              <MoreHorizontal size={20} />
-            </button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-7 z-20 w-32 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 text-sm">
+        <div className="relative">
+          <button onClick={() => setMenuOpen((v) => !v)} className="text-gray-600 dark:text-gray-300 hover:opacity-60">
+            <MoreHorizontal size={20} />
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 top-7 z-20 w-40 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 text-sm">
+                {isOwner ? (
+                  <>
+                    <button
+                      onClick={() => { setMenuOpen(false); setOpenEdit(true); }}
+                      className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                    >
+                      Chỉnh sửa
+                    </button>
+                    <button
+                      onClick={() => { setMenuOpen(false); setOpenTag(true); }}
+                      className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                    >
+                      Gắn thẻ người
+                    </button>
+                    <button onClick={handleDelete} className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-700">
+                      Xoá bài
+                    </button>
+                  </>
+                ) : (
                   <button
-                    onClick={() => { setMenuOpen(false); setOpenEdit(true); }}
-                    className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                    onClick={() => { setMenuOpen(false); setOpenReport(true); }}
+                    className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-700"
                   >
-                    Chỉnh sửa
+                    Báo cáo
                   </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); setOpenTag(true); }}
-                    className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
-                  >
-                    Gắn thẻ người
-                  </button>
-                  <button onClick={handleDelete} className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-700">
-                    Xoá bài
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* MEDIA */}
@@ -234,12 +268,10 @@ export default function PostCard({ post }) {
         </div>
       )}
 
-      {/* BÀI CHỈ CÓ TEXT: hiển thị nội dung ở khu vực media (phía trên nút like) */}
+      {/* BÀI CHỈ CÓ TEXT: hiển thị như status Facebook — căn trái, cỡ chữ thường, ngay dưới header */}
       {(!post.media || post.media.length === 0) && !post.isShared && post.caption && (
-        <div className="border-y border-gray-100 dark:border-neutral-800 px-5 py-10 min-h-[160px] flex items-center justify-center">
-          <p className="text-xl leading-relaxed text-center whitespace-pre-wrap break-words">
-            <MentionText text={post.caption} />
-          </p>
+        <div className="px-3 pt-1 pb-3 text-[15px] leading-relaxed whitespace-pre-wrap break-words">
+          <MentionText text={post.caption} />
         </div>
       )}
 
@@ -306,6 +338,7 @@ export default function PostCard({ post }) {
       {openEdit && <EditPostDialog open={openEdit} onClose={() => setOpenEdit(false)} post={post} />}
       {openShare && <SharePostDialog open={openShare} onClose={() => setOpenShare(false)} post={post} />}
       <TagPeopleDialog open={openTag} onClose={() => setOpenTag(false)} onConfirm={onTagConfirm} />
+      {openReport && <ReportPostDialog open={openReport} onClose={() => setOpenReport(false)} postId={post.id} />}
 
       {peopleModal && (
         <Modal open onClose={() => setPeopleModal(null)}>

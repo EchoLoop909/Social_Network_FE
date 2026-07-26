@@ -17,7 +17,6 @@ import logger from "redux-logger";
 import auth from "./authSlice";
 import feed from "./feedSlice";
 import stories from "./storySlice";
-import suggest from "./suggestSlice";
 import notifications from "./notifSlice";
 import dm from "./dmSlice";
 import ui from "./uiSlice";
@@ -35,7 +34,6 @@ const rootReducer = combineReducers({
   auth,
   feed,
   stories,
-  suggest,
   notifications,
   dm,
   ui,

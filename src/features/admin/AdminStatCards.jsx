@@ -1,4 +1,4 @@
-import { Users, UserCheck, UserX, Clock, Flag, Ban, Activity } from "lucide-react";
+import { Users, UserCheck, UserX, Flag, Ban, Activity, FileText } from "lucide-react";
 import { NotInDbTag } from "./adminUi";
 
 function Card({ icon: Icon, tint, label, value, sub, na }) {
@@ -30,16 +30,16 @@ export default function AdminStatCards({ stats, loading }) {
         value={v(stats?.totalUsers)}
       />
       <Card
+        icon={FileText}
+        tint="bg-indigo-100 text-indigo-600"
+        label="Tổng bài viết"
+        value={v(stats?.totalPosts)}
+      />
+      <Card
         icon={UserCheck}
         tint="bg-green-100 text-green-600"
         label="Đang hoạt động (ACTIVE)"
         value={v(stats?.activeUsers)}
-      />
-      <Card
-        icon={Clock}
-        tint="bg-amber-100 text-amber-600"
-        label="Chờ kích hoạt (PENDING)"
-        value={v(stats?.pendingUsers)}
       />
       <Card
         icon={UserX}
@@ -57,8 +57,6 @@ export default function AdminStatCards({ stats, loading }) {
       {/* KHÔNG có trong DB — giữ ô cho đúng layout ảnh mẫu, đánh dấu N/A.
           DAU cần tracking đăng nhập; Recent Bans (24h) cần mốc thời gian đổi
           trạng thái — cả hai đều không tồn tại trong CSDL hiện tại. */}
-      <Card icon={Activity} tint="bg-gray-100 text-gray-400" label="Active Users (DAU)" na />
-      <Card icon={Ban} tint="bg-gray-100 text-gray-400" label="Recent Bans (24h)" na />
     </div>
   );
 }

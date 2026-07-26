@@ -1,9 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { searchUsers } from "../services/followershipApi";
 
+// Bắt cùng lúc @mention (chữ, số, dấu chấm, gạch dưới) và #hashtag (chữ có dấu, số, gạch dưới).
+const TOKEN = /(@[A-Za-z0-9._]+|#[\p{L}0-9_]+)/gu;
+
 /**
- * Hiển thị text, biến @username thành link xanh -> bấm vào chuyển sang trang cá nhân của user đó.
- * Vì route hồ sơ dùng id, khi bấm sẽ tra username -> id rồi điều hướng.
+ * Hiển thị text, biến @username thành link đỏ -> chuyển sang trang cá nhân của user đó,
+ * và #hashtag thành link xanh -> chuyển sang trang /hashtag/:name liệt kê bài viết cùng thẻ.
  */
 export default function MentionText({ text, className = "" }) {
   const navigate = useNavigate();
@@ -18,18 +21,31 @@ export default function MentionText({ text, className = "" }) {
     } catch { /* ignore */ }
   };
 
-  const parts = String(text).split(/(@[A-Za-z0-9._]+)/g);
+  const goHashtag = (name, e) => {
+    e.stopPropagation();
+    navigate(`/hashtag/${encodeURIComponent(name.toLowerCase())}`);
+  };
+
+  const parts = String(text).split(TOKEN);
   return (
     <span className={className}>
-      {parts.map((p, i) =>
-        p.startsWith("@") && p.length > 1 ? (
-          <span key={i} onClick={(e) => goUser(p.slice(1), e)} className="text-red-500 cursor-pointer hover:underline">
-            {p}
-          </span>
-        ) : (
-          <span key={i}>{p}</span>
-        )
-      )}
+      {parts.map((p, i) => {
+        if (p.startsWith("@") && p.length > 1) {
+          return (
+            <span key={i} onClick={(e) => goUser(p.slice(1), e)} className="text-red-500 cursor-pointer hover:underline">
+              {p}
+            </span>
+          );
+        }
+        if (p.startsWith("#") && p.length > 1) {
+          return (
+            <span key={i} onClick={(e) => goHashtag(p.slice(1), e)} className="text-blue-500 cursor-pointer hover:underline">
+              {p}
+            </span>
+          );
+        }
+        return <span key={i}>{p}</span>;
+      })}
     </span>
   );
 }

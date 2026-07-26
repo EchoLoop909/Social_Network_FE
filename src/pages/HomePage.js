@@ -5,11 +5,14 @@ import { Loader2, Send } from "lucide-react";
 import FeedList from "../features/feed/FeedList";
 import StoryBar from "../features/stories/StoryBar";
 import { logout } from "../store/authSlice";
-import { getStoredTokens, clearTokens, logoutApi } from "../services/authApi";
+import { clearTokens } from "../services/authApi";
+import keycloak from "../services/keycloak";
 import { getUserById } from "../services/profileApi";
 import { getSuggestions, sendFriendRequest } from "../services/followershipApi";
 
-const AVATAR_FALLBACK = "https://via.placeholder.com/56?text=?";
+// Avatar: có ảnh -> dùng ảnh; chưa có -> avatar chữ viết tắt theo tên/username (vd "Hiệp Hoàng" -> "HH").
+const avatarSrc = (u) =>
+  u?.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(u?.name || u?.username || "User")}`;
 
 function displayName(u) {
   if (!u) return "";
@@ -30,7 +33,7 @@ export default function HomePage() {
     try {
       const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
       if (!t?.access_token) return null;
-      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+      return JSON.parse(atob(t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.sub || null;
     } catch {
       return null;
     }
@@ -58,21 +61,36 @@ export default function HomePage() {
     return () => { alive = false; };
   }, [reduxUser, meId]);
 
-  const handleLogout = async () => {
-    const tokens = getStoredTokens();
-    if (tokens?.refresh_token) await logoutApi(tokens.refresh_token);
+  // Nút đăng xuất cho TRANG USER — độc lập với LogoutButton.js (admin), không dùng chung hàm.
+  // Đúng luồng Authorization Code Flow (RP-Initiated Logout, OIDC):
+  // 1. Xoá state phía app trước (localStorage + Redux).
+  // 2. keycloak.logout() điều hướng sang endpoint logout của Keycloak — nơi duy nhất
+  //    thực sự huỷ phiên SSO. logoutMethod: "POST" gửi id_token_hint qua form ẩn.
+  const handleLogout = () => {
     clearTokens();
     dispatch(logout());
-    navigate("/login", { replace: true });
+    keycloak.logout({
+      redirectUri: window.location.origin + "/login",
+      logoutMethod: "POST",
+    });
   };
 
+  // Sau khi gửi lời mời, gọi lại gợi ý (BE đã ghi "đã gợi ý" nên tự loại người vừa gửi +
+  // những người vừa hiện trong 24h qua) để làm ĐẦY LẠI đủ 5 người, thay vì chỉ xóa 1 rồi thôi.
   const onFollow = async (u) => {
     setBusyId(u.id);
     try {
       await sendFriendRequest(u.id);
-      setSuggestions((prev) => prev.filter((x) => x.id !== u.id));
     } catch {
-      /* ignore */
+      setBusyId(null);
+      return; // gửi lời mời thất bại -> giữ nguyên danh sách, không xóa người này
+    }
+    try {
+      const sug = await getSuggestions();
+      setSuggestions(Array.isArray(sug) ? sug.slice(0, 5) : []);
+    } catch {
+      // Gửi lời mời đã thành công, chỉ lỗi lúc gọi lại gợi ý -> ít nhất xóa người vừa gửi.
+      setSuggestions((prev) => prev.filter((x) => x.id !== u.id));
     } finally {
       setBusyId(null);
     }
@@ -96,7 +114,7 @@ export default function HomePage() {
             <div className="flex items-center gap-4 mb-6">
               <Link to="/u/me">
                 <img
-                  src={user.photo || AVATAR_FALLBACK}
+                  src={avatarSrc(user)}
                   alt={user.username}
                   className="w-14 h-14 rounded-full object-cover border"
                 />
@@ -130,7 +148,7 @@ export default function HomePage() {
                 <div key={u.id} className="flex items-center gap-3">
                   <Link to={`/u/${u.id}`}>
                     <img
-                      src={u.photo || AVATAR_FALLBACK}
+                      src={avatarSrc(u)}
                       alt={u.username}
                       className="w-11 h-11 rounded-full object-cover border"
                     />

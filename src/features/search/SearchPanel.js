@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { X, Hash } from "lucide-react";
 import {
   searchAll,
   getRecent,
@@ -7,11 +8,15 @@ import {
   removeRecent,
   addRecent,
 } from "../../services/searchApi";
+import { searchHashtags } from "../../services/hashtagApi";
 
-export default function SearchPanel() {
+export default function SearchPanel({ onClose }) {
+  const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [recent, setRecent] = useState([]);
   const [results, setResults] = useState([]);
+  const [hashtagResults, setHashtagResults] = useState([]);
+  const isHashtagQuery = q.trim().startsWith("#");
 
   useEffect(() => {
     getRecent().then(setRecent);
@@ -20,11 +25,18 @@ export default function SearchPanel() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!q.trim()) {
+      const kw = q.trim();
+      if (!kw) {
         setResults([]);
+        setHashtagResults([]);
         return;
       }
-      const rs = await searchAll(q.trim());
+      if (kw.startsWith("#")) {
+        const rs = await searchHashtags(kw).catch(() => []);
+        if (alive) setHashtagResults(rs);
+        return;
+      }
+      const rs = await searchAll(kw);
       if (alive) setResults(rs);
     })();
     return () => {
@@ -36,6 +48,12 @@ export default function SearchPanel() {
     await addRecent(item);
     setQ("");
     setRecent(await getRecent());
+  };
+
+  const pickHashtag = (h) => {
+    setQ("");
+    onClose?.();
+    navigate(`/hashtag/${encodeURIComponent(h.name)}`);
   };
 
   return (
@@ -103,7 +121,34 @@ export default function SearchPanel() {
         </>
       )}
 
-      {q && (
+      {q && isHashtagQuery && (
+        <ul className="space-y-4">
+          {hashtagResults.map((h) => (
+            <li
+              key={h.id}
+              className="flex items-center gap-3 cursor-pointer"
+              onClick={() => pickHashtag(h)}
+            >
+              <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
+                <Hash size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate">#{h.name}</div>
+                <div className="text-[12px] text-gray-500 leading-[18px] truncate">
+                  {h.postCount || 0} bài viết
+                </div>
+              </div>
+            </li>
+          ))}
+          {hashtagResults.length === 0 && (
+            <div className="text-gray-400 text-sm text-center mt-16">
+              Không tìm thấy hashtag nào.
+            </div>
+          )}
+        </ul>
+      )}
+
+      {q && !isHashtagQuery && (
         <ul className="space-y-4">
           {results.map((a) => (
             <li

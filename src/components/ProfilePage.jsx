@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { Grid, Bookmark, User, Camera, Loader2, Lock, X } from "lucide-react";
+import { Grid, Bookmark, User, Camera, Loader2, Lock, X, Pin } from "lucide-react";
 import { getUserById, getUserPosts, updateMyProfile } from "../services/profileApi";
 import { getFriends, getSentRequests } from "../services/followershipApi";
 import { uploadMedia } from "../services/postApi";
@@ -15,8 +15,6 @@ import { setViewingPost, clearViewingPost } from "../store/feedSlice";
 import StoryViewerModal from "../features/stories/StoryViewerModal";
 import PostModal from "../features/feed/PostModal";
 
-const AVATAR_FALLBACK = "https://via.placeholder.com/150?text=?";
-
 function displayName(u) {
   if (!u) return "";
   return (
@@ -27,12 +25,21 @@ function displayName(u) {
   );
 }
 
+// Avatar: có ảnh -> dùng ảnh; chưa có -> avatar chữ viết tắt tên/họ (vd "Hoàng Hiệp" -> "HH").
+function avatarUrl(u) {
+  if (u?.photo) return u.photo;
+  const name = displayName(u) || u?.username || "User";
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}`;
+}
+
 // id của mình từ 'sub' trong access_token
 function getMyId() {
   try {
     const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
     if (!t?.access_token) return null;
-    return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+    // JWT payload là base64URL: phải đổi '-'/'_' về '+'/'/' trước khi atob (token Google có các ký tự này).
+    const b64 = t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64))?.sub || null;
   } catch {
     return null;
   }
@@ -275,7 +282,12 @@ const ProfilePage = () => {
                   <Loader2 className="animate-spin text-white" />
                 </div>
               )}
-              <img src={user.photo || AVATAR_FALLBACK} alt="avatar" className="w-full h-full rounded-full object-cover" />
+              <img
+                src={avatarUrl(user)}
+                alt="avatar"
+                className="w-full h-full rounded-full object-cover"
+                onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName(user) || "User")}`; }}
+              />
               {isSelf && (
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                   <Camera className="text-white" size={26} />
@@ -390,6 +402,13 @@ const ProfilePage = () => {
                   onClick={() => openPost(p.id)}
                   className="relative aspect-square bg-gray-100 dark:bg-neutral-800 overflow-hidden group"
                 >
+                  {p.isPinned && (
+                    <Pin
+                      size={16}
+                      className="absolute top-1.5 right-1.5 z-10 text-white drop-shadow"
+                      fill="white"
+                    />
+                  )}
                   {img ? (
                     isVideo ? (
                       <video src={img} className="w-full h-full object-cover" muted />
@@ -490,7 +509,7 @@ const ProfilePage = () => {
                     onClick={() => goToUser(u.id)}
                     className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-left"
                   >
-                    <img src={u.photo || AVATAR_FALLBACK} alt="" className="w-11 h-11 rounded-full object-cover bg-gray-200" />
+                    <img src={avatarUrl(u)} alt="" className="w-11 h-11 rounded-full object-cover bg-gray-200" />
                     <div className="min-w-0">
                       <div className="font-semibold text-sm truncate">{u.username}</div>
                       <div className="text-xs text-gray-500 truncate">{displayName(u)}</div>

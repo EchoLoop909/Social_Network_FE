@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-import { X, MessageCircle, Loader2, Repeat2, MoreHorizontal } from "lucide-react";
+import { X, MessageCircle, Loader2, Repeat2, MoreHorizontal, Pin } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import MediaCarousel from "./MediaCarousel";
 import CommentSection from "./CommentSection";
 import ReactionButton from "./ReactionButton";
 import ReactionsModal from "./ReactionsModal";
 import SharePostDialog from "./SharePostDialog";
+import EditPostDialog from "./EditPostDialog";
 import Modal from "../../components/Modal";
 import { getSharers } from "../../services/postApi";
 import { deletePostThunk } from "../../store/feedSlice";
@@ -28,6 +29,7 @@ export default function PostModal({ post, open, onClose, currentUserId, onDelete
   const [sharers, setSharers] = useState(null); // { loading, users } | null
   const [openShare, setOpenShare] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openEdit, setOpenEdit] = useState(false);
 
   const hasMedia = !!(post && post.media && post.media.length > 0);
   const author = post?.author || { username: "Người dùng", name: "", avatar: "" };
@@ -101,10 +103,13 @@ export default function PostModal({ post, open, onClose, currentUserId, onDelete
                   />
                   <div className="min-w-0">
                     <div className="font-semibold text-sm truncate">{author.username}</div>
-                    <div className="text-xs text-gray-400">{timeAgo(post.ts)}</div>
+                    <div className="text-xs text-gray-400 flex items-center gap-1">
+                      {post.isPinned && <Pin size={12} className="text-gray-400" />}
+                      {timeAgo(post.ts)}
+                    </div>
                   </div>
 
-                  {/* Menu chủ bài: Xoá bài */}
+                  {/* Menu chủ bài: Chỉnh sửa, Xoá bài */}
                   {isOwner && (
                     <div className="ml-auto mr-6 relative">
                       <button onClick={() => setMenuOpen((v) => !v)} className="p-1 hover:opacity-60"><MoreHorizontal size={20} /></button>
@@ -112,6 +117,12 @@ export default function PostModal({ post, open, onClose, currentUserId, onDelete
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                           <div className="absolute right-0 top-7 z-20 w-32 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 text-sm">
+                            <button
+                              onClick={() => { setMenuOpen(false); setOpenEdit(true); }}
+                              className="block w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                            >
+                              Chỉnh sửa
+                            </button>
                             <button onClick={handleDelete} className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100 dark:hover:bg-neutral-700">Xoá bài</button>
                           </div>
                         </>
@@ -182,6 +193,9 @@ export default function PostModal({ post, open, onClose, currentUserId, onDelete
 
       {/* Chia sẻ (repost) bài viết */}
       {openShare && post && <SharePostDialog open={openShare} onClose={() => setOpenShare(false)} post={post} />}
+
+      {/* Chỉnh sửa bài viết */}
+      {openEdit && post && <EditPostDialog open={openEdit} onClose={() => setOpenEdit(false)} post={post} />}
 
       {/* Xem ai đã chia sẻ */}
       {sharers && (

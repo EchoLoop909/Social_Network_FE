@@ -30,6 +30,13 @@ export const REPORT_TARGET_TYPE = {
   USER: "USER",
 };
 
+// ─── PostStatus enum (models/Enum/PostStatus.java) ──────────────────────────
+export const POST_STATUS = {
+  PENDING_REVIEW: "PENDING_REVIEW",
+  PUBLISHED: "PUBLISHED",
+  FLAGGED: "FLAGGED",
+};
+
 // ─── users: đúng field entity User ──────────────────────────────────────────
 // id, username, email, name, firstname, lastname, surname, photo, description,
 // creationDate, deletionDate, isChecked, isPrivate, status
@@ -225,6 +232,51 @@ export const adminUsers = [
     isChecked: false,
     isPrivate: false,
     status: USER_STATUS.ACTIVE,
+  },
+];
+
+// ─── posts: field tối thiểu khớp entity Post — chỉ để trang admin đếm/đối
+// chiếu nội dung bị báo cáo (id, text, postType, status, createTime, userId) ─
+export const adminPosts = [
+  {
+    id: "p-9f2a-post-0001",
+    text: "Mua ngay áo thun giá sốc chỉ 99k! Inbox ngay để được ưu đãi!!! 🔥🔥🔥",
+    postType: "TEXT",
+    status: POST_STATUS.PUBLISHED,
+    createTime: "2024-05-18T10:00:00",
+    userId: "b1f2c3d4-0001-4a2b-9c3d-000000000007",
+  },
+  {
+    id: "p-9f2a-post-0002",
+    text: "[Ảnh nhạy cảm — đã bị người dùng báo cáo]",
+    postType: "IMAGE",
+    status: POST_STATUS.FLAGGED,
+    createTime: "2024-05-14T09:30:00",
+    userId: "b1f2c3d4-0001-4a2b-9c3d-000000000002",
+  },
+  {
+    id: "p-9f2a-post-0003",
+    text: "Uống nước chanh mật ong mỗi sáng chữa khỏi bách bệnh, không cần đi bác sĩ!",
+    postType: "TEXT",
+    status: POST_STATUS.PUBLISHED,
+    createTime: "2024-05-07T08:15:00",
+    userId: "b1f2c3d4-0001-4a2b-9c3d-000000000011",
+  },
+  {
+    id: "p-9f2a-post-0004",
+    text: "Hoàng hôn hôm nay đẹp quá 🌅",
+    postType: "IMAGE",
+    status: POST_STATUS.PUBLISHED,
+    createTime: "2024-05-21T18:40:00",
+    userId: "b1f2c3d4-0001-4a2b-9c3d-000000000001",
+  },
+  {
+    id: "p-9f2a-post-0005",
+    text: "Cuối tuần đi cà phê với hội bạn thân ☕",
+    postType: "TEXT",
+    status: POST_STATUS.PUBLISHED,
+    createTime: "2024-05-22T14:00:00",
+    userId: "b1f2c3d4-0001-4a2b-9c3d-000000000005",
   },
 ];
 

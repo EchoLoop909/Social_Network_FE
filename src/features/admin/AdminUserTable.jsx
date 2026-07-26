@@ -102,13 +102,7 @@ export default function AdminUserTable({ onChanged }) {
           <option value="oldest">Ngày ĐK: Cũ nhất</option>
         </select>
 
-        {/* Lọc Risk Level trong ảnh mẫu -> DB không có -> disable */}
-        <span
-          title="Không có trong DB/tài liệu"
-          className="py-2 px-3 text-sm rounded-lg border border-dashed border-gray-300 text-gray-400 dark:border-neutral-700 cursor-not-allowed select-none"
-        >
-          Risk Level ▾
-        </span>
+
       </div>
 
       {/* Bảng */}
@@ -123,7 +117,6 @@ export default function AdminUserTable({ onChanged }) {
               <th className="py-3 px-4 font-medium">Trạng thái</th>
               <th className="py-3 px-4 font-medium">Ngày đăng ký</th>
               <th className="py-3 px-4 font-medium">Riêng tư</th>
-              <th className="py-3 px-4 font-medium">Risk Level</th>
               <th className="py-3 px-4 font-medium text-right">Hành động</th>
             </tr>
           </thead>
@@ -172,15 +165,12 @@ export default function AdminUserTable({ onChanged }) {
                     <td className="py-3 px-4 text-gray-600 dark:text-neutral-300">
                       {u.isPrivate ? "Riêng tư" : "Công khai"}
                     </td>
-                    {/* Risk Level không có trong DB */}
-                    <td className="py-3 px-4">
-                      <NotInDbTag text="N/A" />
-                    </td>
+                  
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-1">
                         <button
-                          onClick={() => navigate(`/u/${u.id}`)}
-                          title="Xem hồ sơ"
+                          onClick={() => navigate(`/admin/users/${u.id}`)}
+                          title="Xem chi tiết người dùng"
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs border border-gray-200 dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800"
                         >
                           <Eye size={14} /> Xem

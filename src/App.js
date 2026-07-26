@@ -11,13 +11,14 @@ import InboxPage from "./pages/InboxPage";
 import CreatePage from "./pages/CreatePage";
 import SavedPage from "./pages/SavedPage";
 import PostDetailPage from "./pages/PostDetailPage";
+import HashtagPage from "./pages/HashtagPage";
 import ProfilePage from "./components/ProfilePage";
 import FriendRequestDemo from "./pages/FriendRequestDemo";
 import FriendsPage from "./pages/FriendsPage";
 import StoriesPage from "./pages/StoriesPage";
 import Login from "./pages/Login";
-import Register from "./pages/Register";
 import AdminPage from "./pages/AdminPage";
+import AdminUserDetailPage from "./pages/AdminUserDetailPage";
 import { isAdminToken } from "./utils/auth";
 
 // Chặn route khi chưa đăng nhập
@@ -41,10 +42,7 @@ export default function App() {
         path="/login"
         element={isAuthed ? <Navigate to={admin ? "/admin" : "/"} replace /> : <Login />}
       />
-      <Route
-        path="/register"
-        element={isAuthed ? <Navigate to={admin ? "/admin" : "/"} replace /> : <Register />}
-      />
+      {/* Đăng ký dùng trang của Keycloak — không còn route /register ở FE. */}
 
       {/* Trang quản trị — CHỈ cho role ADMIN. Chưa đăng nhập -> /login; không phải admin -> / */}
       <Route
@@ -54,6 +52,19 @@ export default function App() {
             <Navigate to="/login" replace />
           ) : admin ? (
             <AdminPage />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
+      />
+      {/* Chi tiết 1 người dùng (mở từ nút "Xem" ở bảng quản lý người dùng) — cùng RBAC như /admin */}
+      <Route
+        path="/admin/users/:userId"
+        element={
+          !isAuthed ? (
+            <Navigate to="/login" replace />
+          ) : admin ? (
+            <AdminUserDetailPage />
           ) : (
             <Navigate to="/" replace />
           )
@@ -79,6 +90,7 @@ export default function App() {
         <Route path="friends" element={<FriendsPage />} />
         <Route path="stories" element={<StoriesPage />} />
         <Route path="post/:id" element={<PostDetailPage />} />
+        <Route path="hashtag/:name" element={<HashtagPage />} />
         <Route path="saved" element={<SavedPage />} />
       </Route>
 

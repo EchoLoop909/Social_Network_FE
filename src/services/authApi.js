@@ -1,12 +1,7 @@
-import axios from "axios";
-import { BE_URL } from "../config";
-
-// Client riêng cho auth (login/register/logout là endpoint public, không cần Bearer)
-const authClient = axios.create({
-  baseURL: BE_URL,
-  timeout: 20000,
-  headers: { "Content-Type": "application/json" },
-});
+// Đăng nhập/đăng ký/đăng xuất đều qua Keycloak (Authorization Code Flow).
+// File này chỉ còn: quản lý token trong localStorage.
+// Logic đăng xuất (gọi keycloak.logout) nằm riêng ở từng nơi dùng (LogoutButton.js cho
+// trang admin, HomePage.js cho trang user) — không dùng chung 1 hàm nữa.
 
 const TOKEN_KEY = "auth_tokens";
 
@@ -28,47 +23,18 @@ export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-/* ============ Bóc thông báo lỗi từ envelope BE ============ */
-// BE trả: { isError, Errors: { code, message } }  hoặc lỗi validate: { errors: [...] }
-function extractError(err, fallback) {
-  const d = err?.response?.data;
-  if (!d) return err?.message || fallback;
-  if (d.Errors && d.Errors.message) return d.Errors.message;
-  if (typeof d.Errors === "string") return d.Errors;
-  if (Array.isArray(d.errors)) {
-    return d.errors.map((e) => e.message || e.defaultMessage || e).join(", ");
-  }
-  if (typeof d.errors === "string") return d.errors;
-  return fallback;
+/* ============ Thông báo "tài khoản đã bị khóa" — hiện lại ở trang /login ===
+   sessionStorage (không phải localStorage) vì chỉ cần sống sót qua đúng 1 lần
+   redirect sang Keycloak rồi quay lại /login, không cần tồn tại lâu dài. */
+const ACCOUNT_LOCKED_KEY = "account_locked_message";
+
+export function setAccountLockedMessage(message) {
+  sessionStorage.setItem(ACCOUNT_LOCKED_KEY, message || "Tài khoản của bạn đã bị khóa.");
 }
 
-/* ============ API ============ */
-
-/** Đăng nhập: POST /auth/login -> { access_token, refresh_token, expires_in, token_type, user } */
-export async function loginApi({ username, password }) {
-  try {
-    const res = await authClient.post("/auth/login", { username, password });
-    return res.data.Object;
-  } catch (err) {
-    throw new Error(extractError(err, "Đăng nhập thất bại"));
-  }
-}
-
-/** Đăng ký: POST /auth/register -> { userId, status, message } */
-export async function registerApi(payload) {
-  try {
-    const res = await authClient.post("/auth/register", payload);
-    return res.data.Object;
-  } catch (err) {
-    throw new Error(extractError(err, "Đăng ký thất bại"));
-  }
-}
-
-/** Đăng xuất: POST /auth/logout (thu hồi phiên tại Keycloak). Bỏ qua lỗi. */
-export async function logoutApi(refreshToken) {
-  try {
-    await authClient.post("/auth/logout", { refreshToken });
-  } catch {
-    /* ignore */
-  }
+/** Đọc thông báo (nếu có) rồi xoá luôn — chỉ hiện đúng 1 lần. */
+export function consumeAccountLockedMessage() {
+  const msg = sessionStorage.getItem(ACCOUNT_LOCKED_KEY);
+  if (msg) sessionStorage.removeItem(ACCOUNT_LOCKED_KEY);
+  return msg;
 }

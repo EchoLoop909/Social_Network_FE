@@ -53,7 +53,7 @@ export default function FriendsPage() {
     try {
       const t = JSON.parse(localStorage.getItem("auth_tokens") || "null");
       if (!t?.access_token) return null;
-      return JSON.parse(atob(t.access_token.split(".")[1]))?.sub || null;
+      return JSON.parse(atob(t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.sub || null;
     } catch {
       return null;
     }
@@ -207,9 +207,7 @@ export default function FriendsPage() {
   const navItems = [
     { key: "home", label: "Trang chủ", icon: Home },
     { key: "search", label: "Tìm kiếm", icon: Search },
-    { key: "requests", label: "Lời mời kết bạn", icon: UserPlus, badge: requests.length },
     { key: "sent", label: "Đã gửi lời mời", icon: SendHorizontal, badge: sent.length },
-    { key: "suggestions", label: "Gợi ý", icon: Users },
     { key: "all", label: "Tất cả bạn bè", icon: List, badge: friends.length },
     { key: "blocked", label: "Đã chặn", icon: Ban, badge: blocked.length },
   ];
@@ -234,10 +232,7 @@ export default function FriendsPage() {
               {badge > 0 && <span className="text-xs bg-red-500 text-white rounded-full px-2 py-0.5">{badge}</span>}
             </button>
           ))}
-          <div className="flex items-center gap-3 px-2 py-2.5 rounded-lg text-gray-400 cursor-not-allowed">
-            <span className="w-9 h-9 rounded-full bg-gray-200 dark:bg-neutral-600 flex items-center justify-center"><Cake size={18} /></span>
-            <span>Sinh nhật</span>
-          </div>
+       
         </nav>
       </aside>
 
