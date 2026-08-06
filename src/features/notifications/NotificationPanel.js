@@ -16,6 +16,7 @@ function notifText(type) {
     case "FOLLOW": return "đã chấp nhận lời mời kết bạn.";
     case "FOLLOW_REQUEST": return "đã gửi cho bạn lời mời kết bạn.";
     case "TAG": return "đã nhắc đến bạn trong một bài viết.";
+    case "REPORT": return "đã gửi một báo cáo bài viết mới.";
     default: return "có thông báo mới.";
   }
 }
@@ -36,7 +37,7 @@ function fmtAgo(dt) {
   } catch { return ""; }
 }
 
-export default function NotificationPanel({ onClose }) {
+export default function NotificationPanel({ onClose, onReportClick }) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const items = useSelector((s) => s.notifications.items);
@@ -65,6 +66,10 @@ export default function NotificationPanel({ onClose }) {
       case "TAG":
         // Bài viết được tương tác / được nhắc đến (targetId = id bài viết)
         if (n.targetId) navigate(`/post/${n.targetId}`);
+        break;
+      case "REPORT":
+        // Chỉ admin nhận loại này — để trang admin tự điều hướng sang tab "Báo cáo".
+        if (onReportClick) onReportClick(n);
         break;
       default:
         break;

@@ -20,8 +20,8 @@ export default function Drawer({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -width, opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="fixed top-0 bottom-0 z-50 bg-white dark:bg-neutral-900 border-r border-gray-200 dark:border-neutral-800 shadow-lg overflow-y-auto"
-            style={{ width, left: leftPx }}
+            className="fixed top-0 bottom-0 z-50 bg-white dark:bg-neutral-900 border-r border-gray-200 dark:border-neutral-800 shadow-lg overflow-y-auto w-full left-0 sm:w-[var(--drawer-w)] sm:left-[var(--drawer-left)]"
+            style={{ "--drawer-w": `${width}px`, "--drawer-left": `${leftPx}px` }}
             onClick={(e) => e.stopPropagation()}
           >
             {children}

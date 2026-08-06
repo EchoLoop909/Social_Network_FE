@@ -1,12 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Send } from "lucide-react";
 import FeedList from "../features/feed/FeedList";
 import StoryBar from "../features/stories/StoryBar";
-import { logout } from "../store/authSlice";
-import { clearTokens } from "../services/authApi";
-import keycloak from "../services/keycloak";
+import { logoutFromKeycloak } from "../services/authApi";
 import { getUserById } from "../services/profileApi";
 import { getSuggestions, sendFriendRequest } from "../services/followershipApi";
 
@@ -26,7 +24,6 @@ function displayName(u) {
 
 export default function HomePage() {
   const reduxUser = useSelector((s) => s.auth.user);
-  const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const meId = useMemo(() => {
@@ -62,17 +59,16 @@ export default function HomePage() {
   }, [reduxUser, meId]);
 
   // Nút đăng xuất cho TRANG USER — độc lập với LogoutButton.js (admin), không dùng chung hàm.
-  // Đúng luồng Authorization Code Flow (RP-Initiated Logout, OIDC):
-  // 1. Xoá state phía app trước (localStorage + Redux).
-  // 2. keycloak.logout() điều hướng sang endpoint logout của Keycloak — nơi duy nhất
-  //    thực sự huỷ phiên SSO. logoutMethod: "POST" gửi id_token_hint qua form ẩn.
+  // Đúng luồng Authorization Code Flow (RP-Initiated Logout, OIDC): chỉ gọi
+  // keycloak.logout() để điều hướng sang endpoint logout của Keycloak — nơi duy nhất
+  // thực sự huỷ phiên SSO. KHÔNG dispatch(logout())/clearTokens() ở đây: đổi Redux state
+  // ngay lập tức khiến route guard chuyển sang <Login/>, rồi Login.js tự gọi
+  // keycloak.login() — 2 lệnh điều hướng trình duyệt gần như cùng lúc khiến cái sau huỷ
+  // cái trước (logout() bị abort giữa chừng, tài khoản coi như CHƯA đăng xuất thật ở
+  // Keycloak). index.js sẽ tự đồng bộ lại state qua keycloak.init({onLoad:"check-sso"})
+  // khi trang thực sự tải lại.
   const handleLogout = () => {
-    clearTokens();
-    dispatch(logout());
-    keycloak.logout({
-      redirectUri: window.location.origin + "/login",
-      logoutMethod: "POST",
-    });
+    logoutFromKeycloak();
   };
 
   // Sau khi gửi lời mời, gọi lại gợi ý (BE đã ghi "đã gợi ý" nên tự loại người vừa gửi +

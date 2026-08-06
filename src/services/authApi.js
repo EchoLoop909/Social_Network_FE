@@ -1,7 +1,7 @@
 // Đăng nhập/đăng ký/đăng xuất đều qua Keycloak (Authorization Code Flow).
-// File này chỉ còn: quản lý token trong localStorage.
-// Logic đăng xuất (gọi keycloak.logout) nằm riêng ở từng nơi dùng (LogoutButton.js cho
-// trang admin, HomePage.js cho trang user) — không dùng chung 1 hàm nữa.
+// File này quản lý token local và cung cấp một luồng đăng xuất dùng chung.
+
+import keycloak from "./keycloak";
 
 const TOKEN_KEY = "auth_tokens";
 
@@ -21,6 +21,31 @@ export function saveTokens(tokens) {
 
 export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+/**
+ * Huỷ phiên SSO tại Keycloak và quay về trang đăng nhập.
+ * State Redux phải được caller xoá trước khi gọi hàm này.
+ */
+export function logoutFromKeycloak() {
+  const redirectUri = window.location.origin + "/login";
+
+  try {
+    const result = keycloak.logout({
+      redirectUri,
+      logoutMethod: "GET",
+    });
+
+    if (result && typeof result.catch === "function") {
+      result.catch((error) => {
+        console.error("keycloak.logout() lỗi:", error);
+        window.location.replace(redirectUri);
+      });
+    }
+  } catch (error) {
+    console.error("keycloak.logout() lỗi:", error);
+    window.location.replace(redirectUri);
+  }
 }
 
 /* ============ Thông báo "tài khoản đã bị khóa" — hiện lại ở trang /login ===

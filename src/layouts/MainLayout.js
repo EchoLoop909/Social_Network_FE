@@ -2,23 +2,19 @@ import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   Home, Clapperboard, Send, Heart, PlusSquare, ChevronDown, Users,
 } from "lucide-react";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
 import { toggleTheme } from "../store/uiSlice";
 import Badge from "../components/Badge";
 import ThemeSwitch from "../components/ThemeSwitch";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState } from "react";
 import axios from 'axios';
-import { emit } from "../services/eventBus";
-import { connectChat } from "../services/chatSocket";
-import { fetchUnread, pushNew } from "../store/notifSlice";
+import { useNotificationSocket } from "../hooks/useNotificationSocket";
 import CreatePostDialog from "../features/create/CreatePostDialog";
 import Drawer from "../components/Drawer";
 import SearchPanel from "../features/search/SearchPanel";
 import NotificationPanel from "../features/notifications/NotificationPanel";
 import { BE_URL } from "../config";
-import { getStoredTokens, clearTokens, setAccountLockedMessage } from "../services/authApi";
-import { logout } from "../store/authSlice";
-import keycloak from "../services/keycloak";
+import { getStoredTokens } from "../services/authApi";
 
 function SideItem({ to, onClick, icon: Icon, label, end, badge, collapsed, customIcon }) {
   const base = "flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-800 dark:text-neutral-200 transition-all duration-200";
@@ -47,22 +43,11 @@ function SideItem({ to, onClick, icon: Icon, label, end, badge, collapsed, custo
   );
 }
 
-export default function MainLayout({ keycloak }) {
+export default function MainLayout() {
   const { pathname } = useLocation();
-  const dispatch = useDispatch();
   const [myInfo, setMyInfo] = useState(null);
 
-  // id của mình (lấy từ JWT) để subscribe kênh thông báo riêng
-  const meId = useMemo(() => {
-    try {
-      const t = getStoredTokens();
-      if (!t?.access_token) return null;
-      const b64 = t.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-      return JSON.parse(atob(b64))?.sub || null;
-    } catch { return null; }
-  }, []);
-  const notifClientRef = useRef(null);
-  const [notifConnected, setNotifConnected] = useState(false);
+  const { meId } = useNotificationSocket();
 
   const isDM = pathname.startsWith("/inbox");
   const isProfile = pathname.startsWith("/u/");
@@ -79,54 +64,23 @@ export default function MainLayout({ keycloak }) {
   useEffect(() => {
     const fetchMyInfo = async () => {
       const token = getStoredTokens()?.access_token;
-      if (!token) return;
+      if (!token || !meId) return;
       try {
-        const payload = JSON.parse(window.atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-        const res = await axios.get(`${BE_URL}/auth/getuser?pageIdx=1&pageSize=100`, {
+        // Lấy đúng 1 user theo id (BE hỗ trợ sẵn param userId) thay vì lấy 100 user đầu
+        // rồi tự tìm — tránh trường hợp tài khoản mình không nằm trong 100 user đầu.
+        const res = await axios.get(`${BE_URL}/auth/getuser?userId=${meId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        const found = res.data.Object.find(u => u.id === payload.sub);
+        const found = res.data.Object?.[0];
         if (found) setMyInfo(found);
       } catch (e) { console.error("Sidebar fetch error:", e); }
     };
     fetchMyInfo();
-  }, [pathname]); // Tải lại khi chuyển trang để đồng bộ
-
-  // Tải số thông báo chưa đọc + mở WebSocket nghe kênh riêng của mình (chạy toàn app)
-  useEffect(() => {
-    if (!meId) return;
-    dispatch(fetchUnread());
-    notifClientRef.current = connectChat(() => setNotifConnected(true));
-    return () => { try { notifClientRef.current?.deactivate(); } catch { /* ignore */ } };
-  }, [meId, dispatch]);
-
-  // Khi đã kết nối: subscribe /topic/notifications/{meId}; có noti mới -> đẩy vào store (badge + panel)
-  useEffect(() => {
-    if (!notifConnected || !meId || !notifClientRef.current) return;
-    const sub = notifClientRef.current.subscribe(`/topic/notifications/${meId}`, (frame) => {
-      try {
-        const n = JSON.parse(frame.body);
-        // Tín hiệu đồng bộ im lặng (vd bị hủy kết bạn): chỉ refresh, KHÔNG thêm vào chuông.
-        if (n?.type === "FRIENDSHIP_SYNC") { emit("friendship:changed", n); return; }
-        // Admin vừa khóa tài khoản này -> đá ra ngay lập tức, kèm thông báo hiện ở /login.
-        if (n?.type === "ACCOUNT_SUSPENDED") {
-          setAccountLockedMessage(n.message);
-          clearTokens();
-          dispatch(logout());
-          keycloak.logout({ redirectUri: window.location.origin + "/login", logoutMethod: "POST" });
-          return;
-        }
-        dispatch(pushNew(n));
-        // Noti liên quan kết bạn -> báo các màn hình (Profile, Friends) tự nạp lại, khỏi F5.
-        if (n?.type === "FOLLOW" || n?.type === "FOLLOW_REQUEST") emit("friendship:changed", n);
-      } catch { /* ignore */ }
-    });
-    return () => { try { sub.unsubscribe(); } catch { /* ignore */ } };
-  }, [notifConnected, meId, dispatch]);
+  }, [pathname, meId]); // Tải lại khi chuyển trang để đồng bộ
 
   return (
     <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white font-sans">
-      <aside className={`fixed left-0 top-0 bottom-0 z-50 flex flex-col gap-2 p-3 border-r border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 transition-all duration-300 ${collapsed ? "w-[72px]" : "w-[72px] xl:w-[245px]"}`}>
+      <aside className={`hidden md:fixed md:flex left-0 top-0 bottom-0 z-50 flex-col gap-2 p-3 border-r border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 transition-all duration-300 ${collapsed ? "w-[72px]" : "w-[72px] xl:w-[245px]"}`}>
         <div className={`px-3 py-5 mb-2 h-20 ${collapsed ? "flex justify-center" : ""}`}>
            {collapsed ? (
                <div className="p-2 hover:bg-gray-100 rounded-lg w-fit cursor-pointer" onClick={() => window.location.href='/'}>
@@ -171,12 +125,49 @@ export default function MainLayout({ keycloak }) {
        
       </aside>
 
-      <div className={`transition-all duration-300 ${collapsed ? "ml-[72px]" : "ml-[72px] xl:ml-[245px]"}`}>
+      <div className={`transition-all duration-300 pb-14 md:pb-0 ${collapsed ? "md:ml-[72px]" : "md:ml-[72px] xl:ml-[245px]"}`}>
         <main className="w-full min-h-screen">
             {/* Truyền hàm setMyInfo qua context để trang Profile có thể update Sidebar ngay lập tức */}
             <Outlet context={{ setMyInfo }} />
         </main>
       </div>
+
+      {/* Thanh điều hướng dưới cùng cho màn hình nhỏ (< md) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around h-14 border-t border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <NavLink to="/" end className={({ isActive }) => `p-2 rounded-lg ${isActive ? "font-bold" : ""}`} aria-label="Trang chủ">
+          <Home size={24} strokeWidth={2} />
+        </NavLink>
+        <NavLink to="/reels" className={({ isActive }) => `p-2 rounded-lg ${isActive ? "font-bold" : ""}`} aria-label="Reels">
+          <Clapperboard size={24} strokeWidth={2} />
+        </NavLink>
+        <button className="p-2 rounded-lg" onClick={() => setOpenCreate(true)} aria-label="Tạo">
+          <PlusSquare size={24} strokeWidth={2} />
+        </button>
+        <NavLink to="/inbox" className={({ isActive }) => `relative p-2 rounded-lg ${isActive ? "font-bold" : ""}`} aria-label="Tin nhắn">
+          <Send size={24} strokeWidth={2} />
+          {unreadDM > 0 ? <Badge className="absolute top-0 right-0" /> : null}
+        </NavLink>
+        <button className="relative p-2 rounded-lg" onClick={() => { setOpenNotif(!openNotif); setOpenSearch(false); }} aria-label="Thông báo">
+          <Heart size={24} strokeWidth={2} />
+          {unreadNotif > 0 ? <Badge className="absolute top-0 right-0" /> : null}
+        </button>
+        <NavLink to="/u/me" className="p-1 rounded-lg" aria-label="Trang cá nhân">
+          {(() => {
+            const myName = (myInfo?.name && myInfo.name.trim()) || myInfo?.username || "U";
+            const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(myName)}`;
+            return (
+              <div className="w-6 h-6 rounded-full border border-black dark:border-white overflow-hidden">
+                <img
+                  src={myInfo?.photo || fallback}
+                  className="w-full h-full object-cover"
+                  alt="avatar"
+                  onError={(e) => { e.target.src = fallback; }}
+                />
+              </div>
+            );
+          })()}
+        </NavLink>
+      </nav>
 
       <CreatePostDialog open={openCreate} onClose={() => setOpenCreate(false)} />
       <Drawer open={openSearch} onClose={() => setOpenSearch(false)} width={400} leftPx={75}><SearchPanel /></Drawer>

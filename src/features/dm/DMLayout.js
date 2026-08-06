@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
-  Search, SquarePen, ChevronDown, Send, Phone, Video, Info,
+  Search, SquarePen, ChevronDown, Send, Info,
   Smile, Mic, Image as ImageIcon, Sticker, Loader2, Users, Check, X,
   MoreHorizontal, Reply, Pencil, Trash2, LogOut, UserPlus,
 } from "lucide-react";
@@ -477,17 +477,26 @@ export default function DMLayout() {
   const isGroupLeader = isGroup && activeConv?.creatorId && activeConv.creatorId === meId;
   const focusSearch = () => searchRef.current?.focus();
 
-  // "Đã xem": đặt avatar từng người NGAY DƯỚI đúng tin nhắn cuối họ đã đọc tới
-  // (không chỉ tin cuối cùng của mình) — áp dụng cho cả chat 1-1 lẫn nhóm.
-  const seenByMessageId = useMemo(() => {
+  // "Đã xem": 1 người tính là đã xem tin X nếu tin MỚI NHẤT họ đọc tới (lastReadMessageId)
+  // được tạo CÙNG LÚC HOẶC SAU tin X — vì đọc tin sau thì chắc chắn đã đọc tin trước đó rồi.
+  // (Trước đây so khớp tuyệt đối messageId === lastReadMessageId nên chỉ đúng 1 tin duy nhất
+  // -> mọi tin cũ hơn bị tính nhầm là "chưa ai xem" dù họ đã đọc lướt qua.)
+  const messageTimeById = useMemo(() => {
     const map = {};
-    for (const p of readState) {
-      if (!p.lastReadMessageId) continue;
-      if (!map[p.lastReadMessageId]) map[p.lastReadMessageId] = [];
-      map[p.lastReadMessageId].push(p);
-    }
+    for (const m of messages) map[m.id] = m.createTime;
     return map;
-  }, [readState]);
+  }, [messages]);
+
+  const getSeenBy = (messageId) => {
+    const targetTime = messageTimeById[messageId];
+    if (!targetTime) return [];
+    return readState.filter((p) => {
+      if (!p.lastReadMessageId) return false;
+      const readTime = messageTimeById[p.lastReadMessageId];
+      if (!readTime) return false;
+      return new Date(readTime) >= new Date(targetTime);
+    });
+  };
 
   // Tạo nhóm: tìm người (debounce)
   const togglePick = (u) =>
@@ -605,11 +614,7 @@ export default function DMLayout() {
           ))}
         </div>
 
-        {/* Tabs Messages / Requests */}
-        <div className="px-6 pt-3 pb-2 flex items-center justify-between">
-          <span className="font-bold text-[15px]">Messages</span>
-          <button className="text-sm font-semibold text-gray-500 hover:text-black dark:hover:text-white">Requests</button>
-        </div>
+
 
         {/* Danh sách hội thoại */}
         <div className="flex-1 overflow-y-auto">
@@ -683,8 +688,6 @@ export default function DMLayout() {
                 </div>
               </div>
               <div className="flex items-center gap-5 text-black dark:text-white">
-                <button className="hover:opacity-60"><Phone size={22} /></button>
-                <button className="hover:opacity-60"><Video size={24} /></button>
                 <div className="relative">
                   <button className="hover:opacity-60" onClick={() => setGroupMenuOpen((v) => !v)}><Info size={24} /></button>
                   {groupMenuOpen && (
@@ -1030,7 +1033,7 @@ export default function DMLayout() {
       <MessageDetailsModal
         open={!!detailsFor}
         onClose={() => setDetailsFor(null)}
-        seenBy={(seenByMessageId[detailsFor] || []).filter((p) => {
+        seenBy={getSeenBy(detailsFor).filter((p) => {
           const msg = messages.find((m) => m.id === detailsFor);
           return !msg || p.userId !== msg.senderId;
         })}

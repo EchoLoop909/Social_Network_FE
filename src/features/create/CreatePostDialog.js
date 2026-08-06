@@ -178,7 +178,7 @@ export default function CreatePostDialog({ open, onClose }) {
       {!hasSelection ? (
         <label className="flex flex-col items-center justify-center gap-2 py-8 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800">
           <ImagePlus size={40} className="text-gray-400" />
-          <span className="px-4 py-2 bg-insta-primary text-white rounded-lg text-sm">Chọn ảnh/video (tùy chọn)</span>
+          <span className="px-4 py-2 bg-neutral-900 hover:bg-black text-white rounded-lg text-sm">Chọn ảnh/video (tùy chọn)</span>
           <span className="text-xs text-gray-400">Hoặc chỉ cần nhập nội dung bên dưới</span>
           <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFiles} />
         </label>
@@ -267,10 +267,11 @@ export default function CreatePostDialog({ open, onClose }) {
         className="mt-3 w-full border border-gray-300 dark:border-neutral-700 rounded-lg p-2 bg-transparent text-sm">
         <option value="PUBLIC">Công khai</option>
         <option value="FOLLOWERS">Người theo dõi</option>
+        <option value="FRIENDS">Bạn bè</option>
         <option value="PRIVATE">Chỉ mình tôi</option>
       </select>
 
-      <button className="mt-3 w-full px-3 py-2 bg-insta-primary text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+      <button className="mt-3 w-full px-3 py-2 bg-neutral-900 hover:bg-black text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
         onClick={share} disabled={sharing}>
         {sharing && <Loader2 size={16} className="animate-spin" />}
         {sharing ? "Đang đăng..." : "Chia sẻ"}

@@ -1,68 +1,70 @@
+import { useState } from "react";
 import {
-  LayoutDashboard,
   Users,
+  FileText,
   ShieldAlert,
-  ShieldCheck,
-  Settings,
-  BarChart3,
-  ScrollText,
-  Lock,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import LogoutButton from "../../components/LogoutButton";
 
 const NAV = [
-  { key: "dashboard", label: "Bảng điều khiển", icon: LayoutDashboard, enabled: true },
-  { key: "users", label: "Quản lý người dùng", icon: Users, enabled: true },
-  { key: "moderation", label: "Kiểm duyệt nội dung", icon: ShieldAlert, enabled: true },
+  { key: "users", label: "Người dùng", icon: Users },
+  { key: "posts", label: "Bài viết", icon: FileText },
+  { key: "reports", label: "Báo cáo", icon: ShieldAlert },
 ];
 
 export default function AdminSidebar({ active, onSelect }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
-    <aside className="w-60 shrink-0 bg-[#1877f2] text-white flex flex-col min-h-screen">
-      <div className="flex items-center gap-2 px-5 h-16 border-b border-white/15">
-        <span className="font-semibold text-[15px]">Trang Quản Trị</span>
+    <aside
+      className={`${
+        collapsed ? "w-[72px]" : "w-60"
+      } shrink-0 bg-vela-panel text-white flex flex-col sticky top-0 h-screen overflow-y-auto transition-[width] duration-200`}
+    >
+      <div className="flex items-center gap-2 px-5 h-16 border-b border-white/10">
+        {!collapsed && <span className="font-display font-semibold text-[15px] tracking-wide">ADMIN</span>}
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? "Mở rộng" : "Thu gọn"}
+          className={`p-1.5 rounded-md hover:bg-white/10 text-white/60 hover:text-white ${collapsed ? "mx-auto" : "ml-auto"}`}
+        >
+          {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+        </button>
       </div>
 
       <nav className="flex-1 py-3">
         {NAV.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.key;
-          const base =
-            "w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors";
-          if (!item.enabled) {
-            return (
-              <div
-                key={item.key}
-                title="Chưa hỗ trợ — chưa có trong DB/tài liệu"
-                className={`${base} text-white/45 cursor-not-allowed`}
-              >
-                <Icon size={18} />
-                <span className="flex-1 text-left">{item.label}</span>
-                <Lock size={13} className="opacity-70" />
-              </div>
-            );
-          }
           return (
             <button
               key={item.key}
               onClick={() => onSelect(item.key)}
-              className={`${base} ${
+              title={item.label}
+              className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
                 isActive
-                  ? "bg-white/15 font-semibold border-l-4 border-white"
-                  : "hover:bg-white/10 border-l-4 border-transparent"
-              }`}
+                  ? "bg-white/10 font-semibold border-l-4 border-vela-brand text-white"
+                  : "text-white/60 hover:bg-white/5 hover:text-white border-l-4 border-transparent"
+              } ${collapsed ? "justify-center px-0" : ""}`}
             >
               <Icon size={18} />
-              <span className="flex-1 text-left">{item.label}</span>
+              {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
             </button>
           );
         })}
       </nav>
 
-      <div className="px-4 py-3 border-t border-white/15">
-        <LogoutButton />
+      <div className={`px-4 py-3 border-t border-white/10 ${collapsed ? "px-2" : ""}`}>
+        {collapsed ? (
+          <div className="[&_button]:px-0 [&_button]:text-xs">
+            <LogoutButton />
+          </div>
+        ) : (
+          <LogoutButton />
+        )}
       </div>
-
     </aside>
   );
 }

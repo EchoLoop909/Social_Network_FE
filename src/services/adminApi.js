@@ -136,6 +136,14 @@ export function getAdminUserById(userId) {
     });
 }
 
+// ─── SỐ BÀI VIẾT của 1 user (cột "Bài viết" ở bảng quản lý người dùng) — gọi
+// lại đúng GET /post/GetlistPost, chỉ xin pageSize=1 để lấy totalElements cho nhẹ.
+export function getUserPostCount(userId) {
+  return instance
+    .get("/post/GetlistPost", { params: { userId, pageIdx: 1, pageSize: 1 } })
+    .then((res) => res?.totalElements ?? 0);
+}
+
 // ─── BÀI VIẾT CỦA 1 USER — GET /post/GetlistPost?userId=...&pageSize=100 ────
 export function getAdminUserPosts(userId) {
   return instance
@@ -165,6 +173,30 @@ export function suspendUser(userId) {
 export function activateUser(userId) {
   return toggleStatus(userId, USER_STATUS.ACTIVE);
 }
+
+// ─── DANH SÁCH BÀI VIẾT (tab "Bài viết") — GET /post/GetlistPost (feed thật,
+// không truyền userId) — CÙNG API nuôi trang chủ. Giới hạn thật: chỉ trả bài mà
+// tài khoản admin đang đăng nhập ĐƯỢC PHÉP THẤY (public + của mình + bạn bè đã
+// chấp nhận), KHÔNG PHẢI toàn bộ bài viết trong DB — chưa có endpoint "admin xem
+// hết mọi bài" nên đây là xấp xỉ tốt nhất bằng API thật hiện có.
+export function getAdminPosts({ pageIdx = 1, pageSize = 100 } = {}) {
+  return instance.get("/post/GetlistPost", { params: { pageIdx, pageSize } }).then((res) => {
+    // BE trả HTTP 200 kèm envelope { Object: null, Errors: {message} } khi lỗi xử lý dữ
+    // liệu ở server (không phải lỗi HTTP nên axios không tự reject) — coi đây là lỗi thật.
+    if (!Array.isArray(res?.Object) && res?.Errors?.message) {
+      throw new Error(res.Errors.message);
+    }
+    return {
+      content: Array.isArray(res?.Object) ? res.Object : [],
+      totalElements: res?.totalElements ?? 0,
+    };
+  });
+}
+
+// ─── XOÁ BÀI VIẾT (tab "Bài viết") ── dùng lại đúng deletePost() thật đã có ở
+// services/postApi.js (DELETE /post/delete). Re-export để trang admin chỉ cần
+// import từ 1 chỗ (services/adminApi) như các hàm khác trong file này.
+export { deletePost } from "./postApi";
 
 // ─── HÀNG ĐỢI BÁO CÁO (Report) — ĐÃ NỐI BE THẬT (ReportController, prefix /report) ──
 // params: { status } — "" | PENDING | RESOLVED | REJECTED

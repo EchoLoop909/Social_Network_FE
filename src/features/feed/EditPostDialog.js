@@ -42,6 +42,7 @@ export default function EditPostDialog({ open, onClose, post }) {
         >
           <option value="PUBLIC">Công khai</option>
           <option value="FOLLOWERS">Người theo dõi</option>
+          <option value="FRIENDS">Bạn bè</option>
           <option value="PRIVATE">Chỉ mình tôi</option>
         </select>
       </div>
